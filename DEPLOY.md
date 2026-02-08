@@ -99,10 +99,16 @@ So only your Vercel app can talk to the socket server:
    - Chat works.
    - Screen share works (if you use it).
 
-If the second client never connects or you see CORS/WebSocket errors:
+If the second client never connects or you see **CORS** errors (“No 'Access-Control-Allow-Origin' header”):
 
-- Confirm **NEXT_PUBLIC_SOCKET_URL** on Vercel is exactly the Railway URL (no trailing slash).
-- Confirm **CORS_ORIGIN** on Railway includes the exact Vercel origin (e.g. `https://your-app.vercel.app`).
+- In **Railway** → your socket service → **Variables**, set **CORS_ORIGIN** to your **exact** Vercel origin:  
+  `https://video-chat-app-orcin.vercel.app` (no trailing slash).  
+  For multiple origins use a comma-separated list.
+- Save so Railway redeploys the socket server. The browser only allows requests when the server sends this header for your frontend origin.
+
+Also check:
+
+- **NEXT_PUBLIC_SOCKET_URL** on Vercel is exactly the Railway URL (no trailing slash).
 - Redeploy both after changing env vars.
 
 ---

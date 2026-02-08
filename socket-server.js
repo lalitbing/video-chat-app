@@ -8,6 +8,10 @@ const setupSocket = require("./server/socket");
 
 const port = Number(process.env.PORT) || 3001;
 const corsOrigin = process.env.CORS_ORIGIN || "*";
+const allowedOrigins =
+  corsOrigin === "*"
+    ? "*"
+    : corsOrigin.split(",").map((o) => o.trim()).filter(Boolean);
 
 const httpServer = createServer((_req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain" });
@@ -17,8 +21,9 @@ const httpServer = createServer((_req, res) => {
 const io = new Server(httpServer, {
   path: "/socket.io",
   cors: {
-    origin: corsOrigin === "*" ? "*" : corsOrigin.split(",").map((o) => o.trim()),
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
+    credentials: false,
   },
 });
 
