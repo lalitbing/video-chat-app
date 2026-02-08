@@ -116,7 +116,7 @@ export const VideoGrid = ({
           </div>
         </div>
         {/* Video feeds - right, fixed width, scrollable, centered when few */}
-        <div className="flex h-full w-72 shrink-0 flex-col justify-center gap-2 overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-2">
+        <div className="flex h-full w-[min(35vw,22rem)] min-w-[16rem] shrink-0 flex-col gap-3 overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-3">
           {cameraTiles.map(
             ({
               key,
@@ -149,41 +149,68 @@ export const VideoGrid = ({
     );
   }
 
+  const stageEntry = remoteEntries.length > 0 ? remoteEntries[0] : null;
+  const stagePeerId = stageEntry?.[0] ?? null;
+  const stageStream = stageEntry?.[1] ?? localStream;
+  const stageLabel = stagePeerId ? peerNames[stagePeerId] ?? "Participant 1" : "You";
+  const stageInitial = stageLabel.trim().charAt(0).toUpperCase() || "?";
+  const stageVideoOff = stagePeerId
+    ? peerVideoEnabled[stagePeerId] === false
+    : !isVideoEnabled;
+  const secondaryRemoteEntries = stagePeerId
+    ? remoteEntries.filter(([peerId]) => peerId !== stagePeerId)
+    : [];
+
   return (
-    <div className="flex h-full w-full items-center justify-center p-4">
-      <div className="grid w-full max-w-5xl grid-cols-2 gap-4">
+    <div className="h-full w-full p-3">
+      <div className="relative h-full w-full overflow-hidden rounded-3xl bg-zinc-950">
         <VideoTile
-          stream={localStream}
-          label="You"
-          muted
-          mirrored={!isLocalScreenSharing}
+          stream={stageStream}
+          label={stageLabel}
+          muted={!stagePeerId}
+          mirrored={!stagePeerId && !isLocalScreenSharing}
           size="large"
-          objectFit="cover"
-          showVideoOffPlaceholder={!isVideoEnabled}
-          placeholderLetter={localInitial}
+          objectFit="contain"
+          showVideoOffPlaceholder={stageVideoOff}
+          placeholderLetter={stageVideoOff ? stageInitial : undefined}
         />
+
         {remoteEntries.length === 0 ? (
-          <div className="flex aspect-video w-full items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-900 text-sm text-zinc-400">
+          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-4 py-2 text-sm text-zinc-200">
             Waiting for others to join...
           </div>
         ) : (
-          remoteEntries.map(([peerId, stream], index) => {
-            const name = peerNames[peerId] ?? `Participant ${index + 1}`;
-            const peerInitial = name.trim().charAt(0).toUpperCase() || "?";
-            const videoOff = peerVideoEnabled[peerId] === false;
-            return (
+          <div className="absolute bottom-4 right-4 z-20 flex max-h-[72%] w-56 flex-col gap-2 overflow-y-auto sm:w-64 rounded-2xl">
+            <div className="rounded-2xl border border-white/20 bg-zinc-900/60 p-[2px] shadow-[0_14px_36px_rgba(0,0,0,0.62)]">
               <VideoTile
-                key={peerId}
-                stream={stream}
-                label={name}
-                mirrored={false}
-                size="large"
-                objectFit="cover"
-                showVideoOffPlaceholder={videoOff || undefined}
-                placeholderLetter={videoOff ? peerInitial : undefined}
+                stream={localStream}
+                label="You"
+                muted
+                mirrored={!isLocalScreenSharing}
+                size="small"
+                showVideoOffPlaceholder={!isVideoEnabled}
+                placeholderLetter={localInitial}
               />
-            );
-          })
+            </div>
+
+            {secondaryRemoteEntries.map(([peerId, stream], index) => {
+              const name = peerNames[peerId] ?? `Participant ${index + 2}`;
+              const peerInitial = name.trim().charAt(0).toUpperCase() || "?";
+              const videoOff = peerVideoEnabled[peerId] === false;
+
+              return (
+                <VideoTile
+                  key={peerId}
+                  stream={stream}
+                  label={name}
+                  mirrored={false}
+                  size="small"
+                  showVideoOffPlaceholder={videoOff || undefined}
+                  placeholderLetter={videoOff ? peerInitial : undefined}
+                />
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

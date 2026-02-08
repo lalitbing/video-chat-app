@@ -8,6 +8,10 @@ type RemoteStreamMap = Record<string, MediaStream>;
 type PeerNameMap = Record<string, string>;
 type PeerShareMap = Record<string, boolean>;
 type PeerVideoEnabledMap = Record<string, boolean>;
+export type MediaDeviceOption = {
+  deviceId: string;
+  label: string;
+};
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -28,6 +32,10 @@ export const useWebRTC = (roomId: string | null, name: string) => {
   const [isRecording, setIsRecording] = useState(false);
   const [hasMedia, setHasMedia] = useState(false);
   const [peerVideoEnabled, setPeerVideoEnabled] = useState<PeerVideoEnabledMap>({});
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceOption[]>([]);
+  const [videoInputDevices, setVideoInputDevices] = useState<MediaDeviceOption[]>([]);
+  const [selectedAudioInputId, setSelectedAudioInputId] = useState("");
+  const [selectedVideoInputId, setSelectedVideoInputId] = useState("");
 
   const isScreenSharingRef = useRef(false);
   const isVideoEnabledRef = useRef(true);
@@ -66,6 +74,60 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       stream.addTrack(videoTrack);
     }
     return stream;
+  }, []);
+
+  const refreshAvailableDevices = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
+      return;
+    }
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(
+        (device) => device.kind === "audioinput" && Boolean(device.deviceId)
+      );
+      const videoInputs = devices.filter(
+        (device) => device.kind === "videoinput" && Boolean(device.deviceId)
+      );
+
+      setAudioInputDevices(
+        audioInputs.map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Microphone ${index + 1}`,
+        }))
+      );
+      setVideoInputDevices(
+        videoInputs.map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Camera ${index + 1}`,
+        }))
+      );
+
+      const activeAudioId = audioTracksRef.current[0]?.getSettings().deviceId ?? "";
+      const activeVideoId = cameraTrackRef.current?.getSettings().deviceId ?? "";
+
+      setSelectedAudioInputId((previous) => {
+        if (previous && audioInputs.some((device) => device.deviceId === previous)) {
+          return previous;
+        }
+        if (activeAudioId && audioInputs.some((device) => device.deviceId === activeAudioId)) {
+          return activeAudioId;
+        }
+        return audioInputs[0]?.deviceId ?? "";
+      });
+
+      setSelectedVideoInputId((previous) => {
+        if (previous && videoInputs.some((device) => device.deviceId === previous)) {
+          return previous;
+        }
+        if (activeVideoId && videoInputs.some((device) => device.deviceId === activeVideoId)) {
+          return activeVideoId;
+        }
+        return videoInputs[0]?.deviceId ?? "";
+      });
+    } catch {
+      // Ignore enumeration failures (permissions / browser support).
+    }
   }, []);
 
   const closePeerConnection = useCallback((peerId: string) => {
@@ -183,16 +245,36 @@ export const useWebRTC = (roomId: string | null, name: string) => {
         setLocalStream(combinedStream);
         setLocalCameraStream(combinedStream);
         setHasMedia(true);
+        setSelectedAudioInputId(audioTracksRef.current[0]?.getSettings().deviceId ?? "");
+        setSelectedVideoInputId(cameraTrackRef.current?.getSettings().deviceId ?? "");
+        void refreshAvailableDevices();
       })
       .catch(() => {
         setLocalStream(null);
         setHasMedia(false);
+        void refreshAvailableDevices();
       });
 
     return () => {
       active = false;
     };
-  }, [buildLocalStream, roomId]);
+  }, [buildLocalStream, refreshAvailableDevices, roomId]);
+
+  useEffect(() => {
+    if (!roomId || typeof navigator === "undefined" || !navigator.mediaDevices) {
+      return;
+    }
+
+    const handleDeviceChange = () => {
+      void refreshAvailableDevices();
+    };
+
+    navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
+
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
+    };
+  }, [refreshAvailableDevices, roomId]);
 
   useEffect(() => {
     if (!roomId || !hasMedia) return;
@@ -282,6 +364,14 @@ export const useWebRTC = (roomId: string | null, name: string) => {
         ...prev,
         [id]: name || "Guest",
       }));
+      // Re-broadcast current camera state so newly joined peers receive it
+      // even when we toggled video before they entered the room.
+      if (roomId) {
+        socket.emit("video-state", {
+          roomId,
+          videoEnabled: isVideoEnabledRef.current,
+        });
+      }
       if (roomId && isScreenSharingRef.current) {
         socket.emit("screen-share", { roomId, isSharing: true });
       }
@@ -440,6 +530,12 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      if (cameraTrackRef.current) {
+        cameraTrackRef.current.stop();
+        cameraTrackRef.current = null;
+      }
+      audioTracksRef.current.forEach((track) => track.stop());
+      audioTracksRef.current = [];
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach((t) => t.stop());
         screenStreamRef.current = null;
@@ -461,8 +557,130 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
+      if (cameraTrackRef.current) {
+        cameraTrackRef.current.stop();
+        cameraTrackRef.current = null;
+      }
+      audioTracksRef.current.forEach((track) => track.stop());
+      audioTracksRef.current = [];
     };
   }, []);
+
+  const switchAudioInput = useCallback(
+    async (deviceId: string) => {
+      if (!deviceId || deviceId === selectedAudioInputId) {
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: deviceId } },
+          video: false,
+        });
+        const nextAudioTrack = stream.getAudioTracks()[0] ?? null;
+        if (!nextAudioTrack) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        nextAudioTrack.enabled = !isMuted;
+        const previousAudioTracks = audioTracksRef.current;
+        audioTracksRef.current = [nextAudioTrack];
+
+        for (const [, peerConnection] of peerConnectionsRef.current) {
+          const audioSender = peerConnection
+            .getSenders()
+            .find((sender) => sender.track?.kind === "audio");
+          if (!audioSender) continue;
+          try {
+            await audioSender.replaceTrack(nextAudioTrack);
+          } catch {
+            // Ignore individual peer replace failures.
+          }
+        }
+
+        previousAudioTracks.forEach((track) => track.stop());
+
+        const nextCameraStream = buildLocalStream(cameraTrackRef.current);
+        setLocalCameraStream(nextCameraStream);
+        if (isScreenSharingRef.current) {
+          const sharedTrack = screenStreamRef.current?.getVideoTracks()[0] ?? null;
+          const nextLocalStream = buildLocalStream(sharedTrack);
+          localStreamRef.current = nextLocalStream;
+          setLocalStream(nextLocalStream);
+        } else {
+          localStreamRef.current = nextCameraStream;
+          setLocalStream(nextCameraStream);
+        }
+
+        setSelectedAudioInputId(deviceId);
+        void refreshAvailableDevices();
+      } catch {
+        // Ignore device switch failures.
+      }
+    },
+    [buildLocalStream, isMuted, refreshAvailableDevices, selectedAudioInputId]
+  );
+
+  const switchVideoInput = useCallback(
+    async (deviceId: string) => {
+      if (!deviceId || deviceId === selectedVideoInputId) {
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: deviceId } },
+          audio: false,
+        });
+        const nextCameraTrack = stream.getVideoTracks()[0] ?? null;
+        if (!nextCameraTrack) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        nextCameraTrack.contentHint = "motion";
+        nextCameraTrack.enabled = isVideoEnabledRef.current;
+        const previousCameraTrack = cameraTrackRef.current;
+        cameraTrackRef.current = nextCameraTrack;
+
+        for (const [peerId, peerConnection] of peerConnectionsRef.current) {
+          const screenSender = screenSendersRef.current.get(peerId);
+          const cameraSender = peerConnection
+            .getSenders()
+            .find((sender) => sender.track?.kind === "video" && sender !== screenSender);
+          if (!cameraSender) continue;
+          try {
+            await cameraSender.replaceTrack(nextCameraTrack);
+          } catch {
+            // Ignore individual peer replace failures.
+          }
+        }
+
+        if (previousCameraTrack) {
+          previousCameraTrack.stop();
+        }
+
+        const nextCameraStream = buildLocalStream(nextCameraTrack);
+        setLocalCameraStream(nextCameraStream);
+        if (isScreenSharingRef.current) {
+          const sharedTrack = screenStreamRef.current?.getVideoTracks()[0] ?? null;
+          const nextLocalStream = buildLocalStream(sharedTrack);
+          localStreamRef.current = nextLocalStream;
+          setLocalStream(nextLocalStream);
+        } else {
+          localStreamRef.current = nextCameraStream;
+          setLocalStream(nextCameraStream);
+        }
+
+        setSelectedVideoInputId(deviceId);
+        void refreshAvailableDevices();
+      } catch {
+        // Ignore device switch failures.
+      }
+    },
+    [buildLocalStream, refreshAvailableDevices, selectedVideoInputId]
+  );
 
   const toggleMute = useCallback(() => {
     const nextMuted = !isMuted;
@@ -626,12 +844,18 @@ export const useWebRTC = (roomId: string | null, name: string) => {
     peerNames,
     peerScreenSharing,
     peerVideoEnabled,
+    audioInputDevices,
+    videoInputDevices,
+    selectedAudioInputId,
+    selectedVideoInputId,
     currentSharerId,
     isLocalSharer,
     isMuted,
     toggleMute,
+    switchAudioInput,
     isVideoEnabled,
     toggleVideo,
+    switchVideoInput,
     isScreenSharing,
     toggleScreenShare,
     isRecording,

@@ -10,25 +10,36 @@ export type ChatMessage = {
   timestamp: number;
 };
 
-export const useChat = (roomId: string | null) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+type UseChatOptions = {
+  onIncomingMessage?: (message: ChatMessage) => void;
+};
 
-  useEffect(() => {
-    if (!roomId) return;
-    setMessages([]);
-  }, [roomId]);
+export const useChat = (roomId: string | null, options: UseChatOptions = {}) => {
+  const { onIncomingMessage } = options;
+  const [messagesByRoom, setMessagesByRoom] = useState<Record<string, ChatMessage[]>>({});
+  const messages = roomId ? (messagesByRoom[roomId] ?? []) : [];
 
   useEffect(() => {
     if (!roomId) return;
     const socket = getSocket();
+    const roomKey = roomId;
     const handler = (payload: ChatMessage) => {
-      setMessages((prev) => [...prev, payload]);
+      setMessagesByRoom((prev) => {
+        const roomMessages = prev[roomKey] ?? [];
+        return {
+          ...prev,
+          [roomKey]: [...roomMessages, payload],
+        };
+      });
+      if (payload.id !== socket.id) {
+        onIncomingMessage?.(payload);
+      }
     };
     socket.on("chat-message", handler);
     return () => {
       socket.off("chat-message", handler);
     };
-  }, [roomId]);
+  }, [onIncomingMessage, roomId]);
 
   const sendMessage = useCallback(
     (message: string, name?: string) => {

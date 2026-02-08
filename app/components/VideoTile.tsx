@@ -19,7 +19,7 @@ export const VideoTile = ({
   muted,
   mirrored,
   size = "large",
-  objectFit = "cover",
+  objectFit = "contain",
   showVideoOffPlaceholder,
   placeholderLetter,
 }: VideoTileProps) => {
@@ -33,16 +33,13 @@ export const VideoTile = ({
     }
   }, [stream]);
 
-  const isSharedContent = size === "large" && objectFit === "contain";
   const containerClass =
     size === "small"
-      ? "relative aspect-video w-40 shrink-0 overflow-hidden rounded-xl bg-zinc-800 md:w-48"
-      : isSharedContent
-        ? "relative max-h-full max-w-full overflow-hidden rounded-2xl bg-zinc-900"
-        : "relative aspect-video w-full overflow-hidden rounded-2xl bg-zinc-800";
+      ? "relative aspect-video w-full shrink-0 overflow-hidden rounded-xl bg-zinc-900"
+      : "relative h-full w-full min-h-0 overflow-hidden rounded-2xl bg-zinc-900";
 
   const videoClass =
-    isSharedContent ? "h-full w-full object-contain" : "h-full w-full object-cover";
+    objectFit === "contain" ? "h-full w-full object-contain" : "h-full w-full object-cover";
 
   const showPlaceholder = Boolean(showVideoOffPlaceholder && placeholderLetter);
 
