@@ -28,6 +28,9 @@ export const VideoTile = ({
   useEffect(() => {
     if (!videoRef.current) return;
     videoRef.current.srcObject = stream;
+    if (stream?.active) {
+      videoRef.current.play().catch(() => {});
+    }
   }, [stream]);
 
   const isSharedContent = size === "large" && objectFit === "contain";

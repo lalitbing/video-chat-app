@@ -46,7 +46,6 @@ function HomeContent() {
     remoteStreams,
     remoteScreenStreams,
     peerNames,
-    peerScreenSharing,
     peerVideoEnabled,
     currentSharerId,
     isLocalSharer,
@@ -168,7 +167,6 @@ function HomeContent() {
               remoteStreams={remoteStreams}
               remoteScreenStreams={remoteScreenStreams}
               peerNames={peerNames}
-              peerScreenSharing={peerScreenSharing}
               peerVideoEnabled={peerVideoEnabled}
               isLocalScreenSharing={isScreenSharing}
               currentSharerId={currentSharerId}

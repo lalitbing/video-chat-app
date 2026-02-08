@@ -8,7 +8,6 @@ type VideoGridProps = {
   remoteStreams: Record<string, MediaStream>;
   remoteScreenStreams?: Record<string, MediaStream>;
   peerNames: Record<string, string>;
-  peerScreenSharing: Record<string, boolean>;
   peerVideoEnabled?: Record<string, boolean>;
   isLocalScreenSharing: boolean;
   currentSharerId: string | null;
@@ -23,7 +22,6 @@ export const VideoGrid = ({
   remoteStreams,
   remoteScreenStreams = {},
   peerNames,
-  peerScreenSharing,
   peerVideoEnabled = {},
   isLocalScreenSharing,
   currentSharerId,
@@ -107,9 +105,10 @@ export const VideoGrid = ({
         <div className="flex min-h-0 flex-1 items-center justify-center bg-zinc-950 p-2">
           <div className="relative max-h-full max-w-full flex-1 min-w-0 min-h-0 overflow-hidden rounded-xl bg-zinc-900">
             <VideoTile
+              key={isLocalSharer ? "local-share" : `remote-share-${currentSharerId}`}
               stream={sharerStream}
               label={sharerName}
-              muted={false}
+              muted={isLocalSharer}
               mirrored={false}
               size="large"
               objectFit="contain"
