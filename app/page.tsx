@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { VideoGrid } from "@/app/components/VideoGrid";
 import { ChatPanel } from "@/app/components/ChatPanel";
@@ -11,7 +11,7 @@ import { useChat } from "@/app/hooks/useChat";
 
 const generateRoomId = () => Math.random().toString(36).slice(2, 10);
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roomParam = searchParams.get("room") ?? "";
@@ -206,5 +206,26 @@ export default function Home() {
         onEndCall={handleLeaveRoom}
       />
     </div>
+  );
+}
+
+function HomeFallback() {
+  return (
+    <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
+      <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="text-lg font-semibold tracking-tight">VC Meet</div>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-4 py-10">
+        <div className="h-12 w-12 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800" />
+      </main>
+    </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<HomeFallback />}>
+      <HomeContent />
+    </Suspense>
   );
 }

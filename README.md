@@ -13,7 +13,7 @@ A real-time video meeting app with WebRTC and Socket.io. Create or join rooms by
 - [Project structure](#project-structure)
 - [Socket.io API](#socketio-api-server-relay)
 - [Getting started](#getting-started)
-- [Deployment (Vercel + Railway)](#deployment-vercel--railway)
+- [Deployment (Vercel + Railway)](#deployment-vercel--railway) — **Step-by-step:** see [DEPLOY.md](./DEPLOY.md).
 
 ---
 
