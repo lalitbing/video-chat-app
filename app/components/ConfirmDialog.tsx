@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 type ConfirmDialogProps = {
   isOpen: boolean;
@@ -23,17 +23,78 @@ export const ConfirmDialog = ({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) => {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     if (!isOpen) return;
 
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const focusFirstElement = () => {
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector);
+      focusable?.[0]?.focus();
+    };
+
+    const focusTimer = window.setTimeout(() => {
+      focusFirstElement();
+    }, 0);
+
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         onCancel();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const container = dialogRef.current;
+      if (!container) {
+        event.preventDefault();
+        return;
+      }
+
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(focusableSelector)
+      ).filter((element) => element.offsetParent !== null);
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeElement = document.activeElement as HTMLElement | null;
+
+      if (!container.contains(activeElement)) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          last.focus();
+        } else {
+          first.focus();
+        }
+        return;
+      }
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+        return;
+      }
+
+      if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
     document.addEventListener("keydown", handleEscape);
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isOpen, onCancel]);
@@ -49,6 +110,7 @@ export const ConfirmDialog = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
+        ref={dialogRef}
         className="w-full max-w-sm cursor-default rounded-2xl border border-zinc-700 bg-zinc-900 p-5 text-zinc-100 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >

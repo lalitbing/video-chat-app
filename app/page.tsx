@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
 import { getSocket } from "@/app/lib/socket";
@@ -187,6 +187,22 @@ function HomeContent() {
     }
   };
 
+  const handleShortcutSubmit = useCallback(
+    (event: KeyboardEvent<HTMLFormElement>) => {
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+        return;
+      }
+
+      event.preventDefault();
+      if (isJoining || isCreatingRoom) {
+        return;
+      }
+
+      event.currentTarget.requestSubmit();
+    },
+    [isCreatingRoom, isJoining]
+  );
+
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
       <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -220,15 +236,32 @@ function HomeContent() {
       <main className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <h1 className="mb-6 text-center text-2xl font-semibold">Join a meeting</h1>
-          <div className="flex flex-col gap-4">
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (isJoining || isCreatingRoom) {
+                return;
+              }
+              void handleJoin();
+            }}
+            onKeyDown={handleShortcutSubmit}
+          >
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Your name</label>
+              <label htmlFor="landing-display-name" className="text-sm font-medium">
+                Your name
+              </label>
               <input
+                id="landing-display-name"
+                name="displayName"
+                type="text"
                 value={displayName}
                 onChange={(event) => {
                   setDisplayName(event.target.value);
                   setNameError("");
                 }}
+                autoComplete="name"
+                autoCorrect="off"
                 placeholder="Enter your name"
                 className="rounded-xl border border-zinc-200 bg-transparent px-4 py-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700"
               />
@@ -236,8 +269,13 @@ function HomeContent() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Room ID</label>
+              <label htmlFor="landing-room-id" className="text-sm font-medium">
+                Room ID
+              </label>
               <input
+                id="landing-room-id"
+                name="roomId"
+                type="text"
                 value={roomDraft}
                 onChange={(event) => {
                   setRoomDraft(sanitizeRoomInput(event.target.value));
@@ -254,13 +292,15 @@ function HomeContent() {
 
             <div className="mt-2 flex flex-col gap-3">
               <button
-                onClick={handleJoin}
+                type="submit"
                 disabled={!hasName || isJoining || isCreatingRoom}
+                aria-keyshortcuts="Control+Enter Meta+Enter"
                 className="w-full rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {isJoining ? "Joining..." : "Join room"}
               </button>
               <button
+                type="button"
                 onClick={handleCreateRoom}
                 disabled={!hasName || isJoining || isCreatingRoom}
                 className="w-full rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium transition hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
@@ -268,7 +308,7 @@ function HomeContent() {
                 {isCreatingRoom ? "Creating..." : "Create new room"}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       </main>
     </div>

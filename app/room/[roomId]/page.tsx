@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { BottomBar } from "@/app/components/BottomBar";
 import { ChatPanel } from "@/app/components/ChatPanel";
@@ -531,6 +531,23 @@ export default function RoomPage() {
     roomLookupState === "missing" ||
     (shouldShowNameInput && !displayName.trim()) ||
     isEndingMeeting;
+  const canSubmitPrejoinForm = canShowJoinAction && !isJoinDisabled;
+
+  const handlePrejoinShortcutSubmit = useCallback(
+    (event: KeyboardEvent<HTMLFormElement>) => {
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+        return;
+      }
+
+      event.preventDefault();
+      if (!canSubmitPrejoinForm) {
+        return;
+      }
+
+      event.currentTarget.requestSubmit();
+    },
+    [canSubmitPrejoinForm]
+  );
 
   const previewStream = localCameraStream ?? localStream;
   const previewName = (joinName || displayName || "Guest").trim();
@@ -540,14 +557,15 @@ export default function RoomPage() {
     roomLookupState === "checking"
       ? `Checking room ${normalizedRoomId}...`
       : isWaitingForApproval
-        ? hostName
-          ? `${hostName} needs to admit you before you can join room ${normalizedRoomId}.`
-          : `The host needs to admit you before you can join room ${normalizedRoomId}.`
+        ? "You're in the waiting room."
         : isJoinInProgress
           ? `Joining room ${normalizedRoomId} as ${joinName || displayName || "Guest"}...`
           : shouldShowNameInput
             ? "Preview your camera and choose your mic/video settings before joining."
             : `Ready to join room ${normalizedRoomId} as ${displayName}.`;
+  const waitingStatusMessage = hostName
+    ? `${hostName} will admit you into the meeting shortly.`
+    : "The host will admit you into the meeting shortly.";
 
   const isChatOpen = activeSidebar === "chat";
   const isParticipantsOpen = activeSidebar === "participants";
@@ -608,9 +626,34 @@ export default function RoomPage() {
         </header>
 
         <main className="flex flex-1 items-center justify-center px-4 py-10">
-          <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <form
+            className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!canSubmitPrejoinForm) {
+                return;
+              }
+              handleJoin();
+            }}
+            onKeyDown={handlePrejoinShortcutSubmit}
+          >
             <h1 className="mb-1 text-2xl font-semibold">Room {normalizedRoomId}</h1>
             <p className="mb-5 text-sm text-zinc-500 dark:text-zinc-400">{prejoinDescription}</p>
+            {isWaitingForApproval ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-700/80 dark:bg-amber-900/20 dark:text-amber-100"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500" aria-hidden />
+                  Waiting for host approval
+                </div>
+                <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                  {waitingStatusMessage}
+                </p>
+              </div>
+            ) : null}
 
             <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-950 dark:border-zinc-700">
               <div className="aspect-video w-full">
@@ -634,6 +677,7 @@ export default function RoomPage() {
 
             <div className="mt-4 flex items-center gap-3">
               <button
+                type="button"
                 onClick={toggleMute}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
                   isMuted
@@ -646,6 +690,7 @@ export default function RoomPage() {
               </button>
 
               <button
+                type="button"
                 onClick={toggleVideo}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
                   !isVideoEnabled
@@ -664,13 +709,20 @@ export default function RoomPage() {
 
             {shouldShowNameInput ? (
               <div className="mt-5 flex flex-col gap-2">
-                <label className="text-sm font-medium">Your name</label>
+                <label htmlFor="prejoin-display-name" className="text-sm font-medium">
+                  Your name
+                </label>
                 <input
+                  id="prejoin-display-name"
+                  name="displayName"
+                  type="text"
                   value={displayName}
                   onChange={(event) => {
                     setDisplayName(event.target.value);
                     setNameError("");
                   }}
+                  autoComplete="name"
+                  autoCorrect="off"
                   placeholder="Enter your name"
                   className="rounded-xl border border-zinc-200 bg-transparent px-4 py-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700"
                 />
@@ -687,14 +739,18 @@ export default function RoomPage() {
 
             {canShowJoinAction ? (
               <button
-                onClick={handleJoin}
+                type="submit"
                 disabled={isJoinDisabled}
+                aria-keyshortcuts="Control+Enter Meta+Enter"
                 className="mt-5 w-full rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {joinButtonLabel}
               </button>
             ) : null}
-          </div>
+            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Press Ctrl+Enter (Cmd+Enter on Mac) to submit join.
+            </p>
+          </form>
         </main>
       </div>
     );

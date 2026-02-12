@@ -46,6 +46,51 @@ type BottomBarProps = {
 
 type ConfirmAction = "stop-share" | "leave-call" | null;
 
+const focusableSelector =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+const getFocusableElements = (container: HTMLElement | null) => {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+    (element) => element.offsetParent !== null
+  );
+};
+
+const trapTabWithinContainer = (event: KeyboardEvent, container: HTMLElement | null) => {
+  if (event.key !== "Tab") return;
+
+  const focusableElements = getFocusableElements(container);
+  if (focusableElements.length === 0) {
+    event.preventDefault();
+    return;
+  }
+
+  const first = focusableElements[0];
+  const last = focusableElements[focusableElements.length - 1];
+  const activeElement = document.activeElement as HTMLElement | null;
+
+  if (!container?.contains(activeElement)) {
+    event.preventDefault();
+    if (event.shiftKey) {
+      last.focus();
+    } else {
+      first.focus();
+    }
+    return;
+  }
+
+  if (event.shiftKey && activeElement === first) {
+    event.preventDefault();
+    last.focus();
+    return;
+  }
+
+  if (!event.shiftKey && activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+};
+
 export const BottomBar = ({
   roomId,
   isMuted,
@@ -81,6 +126,10 @@ export const BottomBar = ({
   const [isRoomLinkCopied, setIsRoomLinkCopied] = useState(false);
   const controlsRef = useRef<HTMLDivElement | null>(null);
   const roomShareRef = useRef<HTMLDivElement | null>(null);
+  const roomPopoverRef = useRef<HTMLDivElement | null>(null);
+  const audioMenuRef = useRef<HTMLDivElement | null>(null);
+  const videoMenuRef = useRef<HTMLDivElement | null>(null);
+  const leaveDialogRef = useRef<HTMLDivElement | null>(null);
   const controlButton =
     "flex h-12 w-12 items-center justify-center rounded-full transition";
   const splitControl = "flex h-12 overflow-hidden rounded-full";
@@ -95,6 +144,12 @@ export const BottomBar = ({
 
   useEffect(() => {
     if (!openDeviceMenu) return;
+    const activeMenuRef = openDeviceMenu === "audio" ? audioMenuRef : videoMenuRef;
+
+    const focusTimer = window.setTimeout(() => {
+      const focusableElements = getFocusableElements(activeMenuRef.current);
+      focusableElements[0]?.focus();
+    }, 0);
 
     const handlePointerDown = (event: MouseEvent) => {
       if (!controlsRef.current?.contains(event.target as Node)) {
@@ -102,23 +157,33 @@ export const BottomBar = ({
       }
     };
 
-    const handleEscape = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         setOpenDeviceMenu(null);
+        return;
       }
+
+      trapTabWithinContainer(event, activeMenuRef.current);
     };
 
     document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [openDeviceMenu]);
 
   useEffect(() => {
     if (!isRoomPopoverOpen) return;
+
+    const focusTimer = window.setTimeout(() => {
+      const focusableElements = getFocusableElements(roomPopoverRef.current);
+      focusableElements[0]?.focus();
+    }, 0);
 
     const handlePointerDown = (event: MouseEvent) => {
       if (!roomShareRef.current?.contains(event.target as Node)) {
@@ -127,34 +192,49 @@ export const BottomBar = ({
       }
     };
 
-    const handleEscape = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         setIsRoomPopoverOpen(false);
         setIsRoomLinkCopied(false);
+        return;
       }
+
+      trapTabWithinContainer(event, roomPopoverRef.current);
     };
 
     document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isRoomPopoverOpen]);
 
   useEffect(() => {
     if (!isLeaveOptionsOpen) return;
 
-    const handleEscape = (event: KeyboardEvent) => {
+    const focusTimer = window.setTimeout(() => {
+      const focusableElements = getFocusableElements(leaveDialogRef.current);
+      focusableElements[0]?.focus();
+    }, 0);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         setIsLeaveOptionsOpen(false);
+        return;
       }
+
+      trapTabWithinContainer(event, leaveDialogRef.current);
     };
 
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener("keydown", handleEscape);
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isLeaveOptionsOpen]);
 
@@ -275,6 +355,7 @@ export const BottomBar = ({
             role="dialog"
             aria-modal="true"
             aria-labelledby="host-leave-dialog-title"
+            ref={leaveDialogRef}
             className="w-full max-w-sm cursor-default rounded-2xl border border-zinc-700 bg-zinc-900 p-5 text-zinc-100 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
@@ -329,7 +410,13 @@ export const BottomBar = ({
             Room: <span className="font-medium text-zinc-900 dark:text-zinc-100">{roomId}</span>
           </button>
           {isRoomPopoverOpen ? (
-            <div className="absolute bottom-12 left-0 z-30 w-80 rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl">
+            <div
+              ref={roomPopoverRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Share room link"
+              className="absolute bottom-12 left-0 z-30 w-80 rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl"
+            >
               <div className="text-xs font-medium uppercase tracking-wide text-zinc-400">
                 Share room link
               </div>
@@ -385,7 +472,12 @@ export const BottomBar = ({
               </button>
             </div>
             {openDeviceMenu === "audio" ? (
-              <div className="absolute bottom-14 left-0 z-20 w-64 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-xl">
+              <div
+                ref={audioMenuRef}
+                role="menu"
+                aria-label="Microphone devices"
+                className="absolute bottom-14 left-0 z-20 w-64 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-xl"
+              >
                 <div className="border-b border-zinc-800 px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
                   Microphone
                 </div>
@@ -393,6 +485,7 @@ export const BottomBar = ({
                   {audioInputDevices.map((device) => (
                     <button
                       key={device.deviceId}
+                      role="menuitem"
                       onClick={() => {
                         onSelectAudioInput(device.deviceId);
                         setOpenDeviceMenu(null);
@@ -446,7 +539,12 @@ export const BottomBar = ({
               </button>
             </div>
             {openDeviceMenu === "video" ? (
-              <div className="absolute bottom-14 left-0 z-20 w-64 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-xl">
+              <div
+                ref={videoMenuRef}
+                role="menu"
+                aria-label="Camera devices"
+                className="absolute bottom-14 left-0 z-20 w-64 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-xl"
+              >
                 <div className="border-b border-zinc-800 px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
                   Camera
                 </div>
@@ -454,6 +552,7 @@ export const BottomBar = ({
                   {videoInputDevices.map((device) => (
                     <button
                       key={device.deviceId}
+                      role="menuitem"
                       onClick={() => {
                         onSelectVideoInput(device.deviceId);
                         setOpenDeviceMenu(null);
