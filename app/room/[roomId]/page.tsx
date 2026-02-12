@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { BottomBar } from "@/app/components/BottomBar";
 import { ChatPanel } from "@/app/components/ChatPanel";
 import { ParticipantsPanel } from "@/app/components/ParticipantsPanel";
@@ -11,7 +11,7 @@ import { VideoTile } from "@/app/components/VideoTile";
 import { useChat } from "@/app/hooks/useChat";
 import { useWebRTC } from "@/app/hooks/useWebRTC";
 import { MicIcon, MicOffIcon, VideoOffIcon, VideoOnIcon } from "@/app/icons";
-import { consumePendingLandingName } from "@/app/lib/landingLaunch";
+import { consumePendingLandingLaunch } from "@/app/lib/landingLaunch";
 import { getSocket } from "@/app/lib/socket";
 import { normalizeRoomId } from "@/app/lib/room";
 
@@ -22,6 +22,7 @@ const TOAST_AUTO_HIDE_MS = 3000;
 
 type SidebarType = "chat" | "participants" | null;
 type RoomLookupStatus = "exists" | "missing" | "error";
+type LaunchOrigin = "landing" | "direct";
 
 type RoomLookupResult = {
   roomId: string;
@@ -47,14 +48,11 @@ type MeetingEndedPayload = {
 export default function RoomPage() {
   const router = useRouter();
   const params = useParams<{ roomId: string | string[] }>();
-  const searchParams = useSearchParams();
   const roomParam = params?.roomId;
   const rawRoomId = decodeURIComponent(
     Array.isArray(roomParam) ? roomParam[0] ?? "" : roomParam ?? ""
   );
   const normalizedRoomId = normalizeRoomId(rawRoomId);
-  const intent = searchParams.get("intent") === "create" ? "create" : "join";
-  const routeOrigin = searchParams.get("origin") === "landing" ? "landing" : "direct";
 
   const [displayName, setDisplayName] = useState("");
   const [nameError, setNameError] = useState("");
@@ -64,9 +62,9 @@ export default function RoomPage() {
   const [activeJoinIntent, setActiveJoinIntent] = useState<"create" | "join" | null>(null);
   const [joinAttempt, setJoinAttempt] = useState(0);
   const [roomLookupResult, setRoomLookupResult] = useState<RoomLookupResult | null>(null);
-  const [isLandingBootstrapComplete, setIsLandingBootstrapComplete] = useState(
-    routeOrigin !== "landing"
-  );
+  const [launchIntent, setLaunchIntent] = useState<"create" | "join">("join");
+  const [launchOrigin, setLaunchOrigin] = useState<LaunchOrigin>("direct");
+  const [isLaunchBootstrapComplete, setIsLaunchBootstrapComplete] = useState(false);
   const [activeSidebar, setActiveSidebar] = useState<SidebarType>(null);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [redirectCountdown, setRedirectCountdown] = useState(
@@ -121,35 +119,32 @@ export default function RoomPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (routeOrigin !== "landing") {
-      const timeoutId = window.setTimeout(() => {
-        setIsLandingBootstrapComplete(true);
-      }, 0);
-
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
-    }
-
     const timeoutId = window.setTimeout(() => {
-      const pendingLandingName = normalizedRoomId
-        ? consumePendingLandingName(normalizedRoomId)
-        : "";
-      if (pendingLandingName) {
-        setDisplayName(pendingLandingName);
+      const pendingLandingLaunch = normalizedRoomId
+        ? consumePendingLandingLaunch(normalizedRoomId)
+        : null;
+
+      if (pendingLandingLaunch) {
+        setDisplayName(pendingLandingLaunch.displayName);
+        setLaunchIntent(pendingLandingLaunch.intent);
+        setLaunchOrigin("landing");
+      } else {
+        setLaunchIntent("join");
+        setLaunchOrigin("direct");
       }
+
       setJoinName("");
       setShouldJoin(false);
-      setIsLandingBootstrapComplete(true);
+      setIsLaunchBootstrapComplete(true);
     }, 0);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [normalizedRoomId, routeOrigin]);
+  }, [normalizedRoomId]);
 
   useEffect(() => {
-    if (!normalizedRoomId || intent === "create") return;
+    if (!isLaunchBootstrapComplete || !normalizedRoomId || launchIntent === "create") return;
 
     const socket = getSocket();
     socket.connect();
@@ -198,20 +193,20 @@ export default function RoomPage() {
       settled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [intent, joinAttempt, normalizedRoomId]);
+  }, [isLaunchBootstrapComplete, joinAttempt, launchIntent, normalizedRoomId]);
 
   const roomLookupState = useMemo(() => {
     if (!normalizedRoomId) {
       return "missing";
     }
-    if (intent === "create") {
+    if (launchIntent === "create") {
       return "exists";
     }
     if (!roomLookupResult || roomLookupResult.roomId !== normalizedRoomId) {
       return "checking";
     }
     return roomLookupResult.status;
-  }, [intent, normalizedRoomId, roomLookupResult]);
+  }, [launchIntent, normalizedRoomId, roomLookupResult]);
 
   const roomLookupError =
     roomLookupResult && roomLookupResult.roomId === normalizedRoomId
@@ -220,12 +215,13 @@ export default function RoomPage() {
 
   const canAttemptJoin =
     Boolean(normalizedRoomId && shouldJoin) &&
-    (intent === "create" || roomLookupState === "exists");
+    (launchIntent === "create" || roomLookupState === "exists");
   const stickyRoomId =
     shouldJoin && normalizedRoomId && activeJoinRoomId === normalizedRoomId
       ? activeJoinRoomId
       : null;
-  const stickyIntent = shouldJoin && stickyRoomId ? (activeJoinIntent ?? intent) : intent;
+  const stickyIntent =
+    shouldJoin && stickyRoomId ? (activeJoinIntent ?? launchIntent) : launchIntent;
   const roomId = stickyRoomId ?? (canAttemptJoin ? normalizedRoomId : null);
 
   const {
@@ -358,17 +354,27 @@ export default function RoomPage() {
   }, [normalizedRoomId, router]);
 
   useEffect(() => {
+    if (!isLaunchBootstrapComplete) return;
     if (!normalizedRoomId) return;
-    if (routeOrigin !== "landing") return;
-    if (intent !== "join") return;
+    if (launchOrigin !== "landing") return;
+    if (launchIntent !== "join") return;
     if (roomLookupState !== "missing" && roomEntryState !== "room-not-found") return;
 
     router.replace(`/?room=${normalizedRoomId}&promptCreate=1`);
-  }, [intent, normalizedRoomId, roomEntryState, roomLookupState, routeOrigin, router]);
+  }, [
+    isLaunchBootstrapComplete,
+    launchIntent,
+    launchOrigin,
+    normalizedRoomId,
+    roomEntryState,
+    roomLookupState,
+    router,
+  ]);
 
   const shouldShowNotFoundScreen =
     !normalizedRoomId ||
-    (routeOrigin === "direct" &&
+    (isLaunchBootstrapComplete &&
+      launchOrigin === "direct" &&
       (roomLookupState === "missing" ||
         roomEntryState === "room-not-found" ||
         roomEntryState === "invalid-room"));
@@ -395,13 +401,6 @@ export default function RoomPage() {
       window.clearInterval(intervalId);
     };
   }, [shouldShowNotFoundScreen, router]);
-
-  useEffect(() => {
-    if (!normalizedRoomId) return;
-    if (roomEntryState !== "joined") return;
-    if (intent !== "create") return;
-    router.replace(`/room/${normalizedRoomId}`);
-  }, [intent, normalizedRoomId, roomEntryState, router]);
 
   useEffect(() => {
     if (roomEntryState !== "joined") {
@@ -449,9 +448,9 @@ export default function RoomPage() {
     setJoinName(trimmedName);
     setShouldJoin(true);
     setActiveJoinRoomId(normalizedRoomId);
-    setActiveJoinIntent(intent);
+    setActiveJoinIntent(launchIntent);
     setJoinAttempt((current) => current + 1);
-  }, [displayName, intent, normalizedRoomId]);
+  }, [displayName, launchIntent, normalizedRoomId]);
 
   const handleLeaveRoom = useCallback(() => {
     setShouldJoin(false);
@@ -502,7 +501,7 @@ export default function RoomPage() {
     });
   };
 
-  const shouldAutoJoinFromLanding = routeOrigin === "landing" && Boolean(displayName.trim());
+  const shouldAutoJoinFromLanding = launchOrigin === "landing" && Boolean(displayName.trim());
   const shouldShowNameInput =
     !shouldAutoJoinFromLanding ||
     roomEntryState === "name-taken" ||
@@ -560,7 +559,7 @@ export default function RoomPage() {
     </div>
   ) : null;
 
-  if (routeOrigin === "landing" && !isLandingBootstrapComplete) {
+  if (!isLaunchBootstrapComplete) {
     return (
       <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
         {toast}

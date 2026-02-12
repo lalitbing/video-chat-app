@@ -1,40 +1,50 @@
 const LANDING_NAME_TTL_MS = 5 * 60 * 1000;
 
-type PendingLandingName = {
+export type LandingJoinIntent = "create" | "join";
+
+type PendingLandingLaunch = {
   displayName: string;
+  intent: LandingJoinIntent;
   createdAt: number;
 };
 
-const pendingLandingNames = new Map<string, PendingLandingName>();
+const pendingLandingLaunches = new Map<string, PendingLandingLaunch>();
 
-export const setPendingLandingName = (roomId: string, displayName: string) => {
+export const setPendingLandingLaunch = (
+  roomId: string,
+  displayName: string,
+  intent: LandingJoinIntent
+) => {
   const trimmedName = displayName.trim().slice(0, 60);
   if (!roomId || !trimmedName) {
     return;
   }
 
-  pendingLandingNames.set(roomId, {
+  pendingLandingLaunches.set(roomId, {
     displayName: trimmedName,
+    intent,
     createdAt: Date.now(),
   });
 };
 
-export const consumePendingLandingName = (roomId: string) => {
+export const consumePendingLandingLaunch = (roomId: string) => {
   if (!roomId) {
-    return "";
+    return null;
   }
 
-  const pending = pendingLandingNames.get(roomId);
-  pendingLandingNames.delete(roomId);
+  const pending = pendingLandingLaunches.get(roomId);
+  pendingLandingLaunches.delete(roomId);
 
   if (!pending) {
-    return "";
+    return null;
   }
 
   if (Date.now() - pending.createdAt > LANDING_NAME_TTL_MS) {
-    return "";
+    return null;
   }
 
-  return pending.displayName;
+  return {
+    displayName: pending.displayName,
+    intent: pending.intent,
+  };
 };
-

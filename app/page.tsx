@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
 import { getSocket } from "@/app/lib/socket";
 import { generateRoomId, normalizeRoomId, sanitizeRoomInput } from "@/app/lib/room";
-import { setPendingLandingName } from "@/app/lib/landingLaunch";
+import { setPendingLandingLaunch } from "@/app/lib/landingLaunch";
 
 const ROOM_CHECK_TIMEOUT_MS = 3000;
 const MAX_CREATE_ROOM_RETRIES = 10;
@@ -82,18 +82,14 @@ function HomeContent() {
   }, []);
 
   const buildRoomRoute = useCallback(
-    (roomId: string, intent: "create" | "join") =>
-      `/room/${roomId}?${new URLSearchParams({
-        intent,
-        origin: "landing",
-      }).toString()}`,
+    (roomId: string) => `/room/${roomId}`,
     []
   );
 
   const routeToCreateRoom = useCallback(
     (roomId: string) => {
-      setPendingLandingName(roomId, displayName);
-      router.push(buildRoomRoute(roomId, "create"));
+      setPendingLandingLaunch(roomId, displayName, "create");
+      router.push(buildRoomRoute(roomId));
     },
     [buildRoomRoute, displayName, router]
   );
@@ -122,8 +118,8 @@ function HomeContent() {
         return;
       }
 
-      setPendingLandingName(normalizedRoom, displayName);
-      router.push(buildRoomRoute(normalizedRoom, "join"));
+      setPendingLandingLaunch(normalizedRoom, displayName, "join");
+      router.push(buildRoomRoute(normalizedRoom));
     } catch (error) {
       const message =
         error instanceof Error
