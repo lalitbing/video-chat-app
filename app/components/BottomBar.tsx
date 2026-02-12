@@ -6,6 +6,7 @@ import {
   EndCallIcon,
   MicIcon,
   MicOffIcon,
+  ParticipantsIcon,
   RecordIcon,
   ScreenShareIcon,
   VideoOffIcon,
@@ -33,11 +34,17 @@ type BottomBarProps = {
   onStopRecording: () => void;
   isChatOpen: boolean;
   hasUnreadMessages: boolean;
+  isParticipantsOpen: boolean;
+  hasPendingParticipants: boolean;
+  onToggleParticipants: () => void;
   onToggleChat: () => void;
-  onEndCall: () => void;
+  isHost: boolean;
+  isEndingMeeting?: boolean;
+  onLeaveMeeting: () => void;
+  onEndMeeting: () => void;
 };
 
-type ConfirmAction = "stop-share" | "end-call" | null;
+type ConfirmAction = "stop-share" | "leave-call" | null;
 
 export const BottomBar = ({
   roomId,
@@ -58,11 +65,18 @@ export const BottomBar = ({
   onStopRecording,
   isChatOpen,
   hasUnreadMessages,
+  isParticipantsOpen,
+  hasPendingParticipants,
+  onToggleParticipants,
   onToggleChat,
-  onEndCall,
+  isHost,
+  isEndingMeeting = false,
+  onLeaveMeeting,
+  onEndMeeting,
 }: BottomBarProps) => {
   const [openDeviceMenu, setOpenDeviceMenu] = useState<"audio" | "video" | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [isLeaveOptionsOpen, setIsLeaveOptionsOpen] = useState(false);
   const [isRoomPopoverOpen, setIsRoomPopoverOpen] = useState(false);
   const [isRoomLinkCopied, setIsRoomLinkCopied] = useState(false);
   const controlsRef = useRef<HTMLDivElement | null>(null);
@@ -130,6 +144,21 @@ export const BottomBar = ({
   }, [isRoomPopoverOpen]);
 
   useEffect(() => {
+    if (!isLeaveOptionsOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsLeaveOptionsOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isLeaveOptionsOpen]);
+
+  useEffect(() => {
     if (!isRoomLinkCopied) return;
     const timeout = window.setTimeout(() => {
       setIsRoomLinkCopied(false);
@@ -158,12 +187,16 @@ export const BottomBar = ({
 
   const handleEndCall = () => {
     setOpenDeviceMenu(null);
-    setConfirmAction("end-call");
+    if (isHost) {
+      setIsLeaveOptionsOpen(true);
+      return;
+    }
+    setConfirmAction("leave-call");
   };
 
   const getRoomShareLink = () => {
-    if (typeof window === "undefined") return `/?room=${roomId}`;
-    return `${window.location.origin}/?room=${roomId}`;
+    if (typeof window === "undefined") return `/room/${roomId}`;
+    return `${window.location.origin}/room/${roomId}`;
   };
 
   const handleCopyRoomLink = async () => {
@@ -196,8 +229,8 @@ export const BottomBar = ({
   const handleConfirmAction = () => {
     if (confirmAction === "stop-share") {
       onToggleScreenShare();
-    } else if (confirmAction === "end-call") {
-      onEndCall();
+    } else if (confirmAction === "leave-call") {
+      onLeaveMeeting();
     }
     setConfirmAction(null);
   };
@@ -210,7 +243,7 @@ export const BottomBar = ({
           confirmLabel: "Stop sharing",
           confirmButtonClass: "bg-red-500 text-white hover:bg-red-600",
         }
-      : confirmAction === "end-call"
+      : confirmAction === "leave-call"
         ? {
             title: "Leave this call?",
             description: "You will disconnect from this meeting.",
@@ -231,6 +264,55 @@ export const BottomBar = ({
           onConfirm={handleConfirmAction}
           onCancel={() => setConfirmAction(null)}
         />
+      ) : null}
+
+      {isLeaveOptionsOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex cursor-pointer items-center justify-center bg-black/65 px-4"
+          onClick={() => setIsLeaveOptionsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="host-leave-dialog-title"
+            className="w-full max-w-sm cursor-default rounded-2xl border border-zinc-700 bg-zinc-900 p-5 text-zinc-100 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="host-leave-dialog-title" className="text-lg font-semibold text-white">
+              Leave or end meeting?
+            </h2>
+            <p className="mt-2 text-sm text-zinc-300">
+              Leaving keeps the meeting active for others. Ending closes it for everyone.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setIsLeaveOptionsOpen(false)}
+                className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setIsLeaveOptionsOpen(false);
+                  onLeaveMeeting();
+                }}
+                className="rounded-lg border border-zinc-500 px-4 py-2 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
+              >
+                Leave meeting
+              </button>
+              <button
+                onClick={() => {
+                  setIsLeaveOptionsOpen(false);
+                  onEndMeeting();
+                }}
+                disabled={isEndingMeeting}
+                className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isEndingMeeting ? "Ending..." : "End meeting"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <footer className="flex items-center justify-between border-t border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -413,8 +495,28 @@ export const BottomBar = ({
           </button>
         </div>
 
-        {/* Right: Chat toggle */}
-        <div className="flex min-w-[120px] justify-end">
+        {/* Right: Sidebars */}
+        <div className="flex min-w-[120px] justify-end gap-2">
+          <button
+            onClick={onToggleParticipants}
+            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+              isParticipantsOpen
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+            }`}
+          >
+            <span className="relative">
+              <ParticipantsIcon />
+              {hasPendingParticipants ? (
+                <span
+                  className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"
+                  aria-hidden
+                />
+              ) : null}
+            </span>
+            <span className="hidden sm:inline">Participants</span>
+          </button>
+
           <button
             onClick={onToggleChat}
             className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${

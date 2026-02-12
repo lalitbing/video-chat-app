@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { createServer } = require("http");
 const next = require("next");
 const { Server } = require("socket.io");
@@ -20,7 +21,6 @@ app.prepare().then(() => {
 
   const port = Number(process.env.PORT) || 3000;
   server.listen(port, () => {
-    // eslint-disable-next-line no-console
     console.log(`Server ready on http://localhost:${port}`);
   });
 });

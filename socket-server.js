@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * Standalone Socket.io server for Railway (or any Node host).
  * Deploy this separately from the Next.js frontend; frontend connects via NEXT_PUBLIC_SOCKET_URL.
@@ -30,6 +31,5 @@ const io = new Server(httpServer, {
 setupSocket(io);
 
 httpServer.listen(port, () => {
-  // eslint-disable-next-line no-console
   console.log(`Socket server ready on port ${port} (CORS: ${corsOrigin})`);
 });

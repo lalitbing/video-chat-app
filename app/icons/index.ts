@@ -2,6 +2,7 @@ export { ChatIcon } from "./ChatIcon";
 export { EndCallIcon } from "./EndCallIcon";
 export { MicIcon } from "./MicIcon";
 export { MicOffIcon } from "./MicOffIcon";
+export { ParticipantsIcon } from "./ParticipantsIcon";
 export { RecordIcon } from "./RecordIcon";
 export { ScreenShareIcon } from "./ScreenShareIcon";
 export { VideoOffIcon } from "./VideoOffIcon";

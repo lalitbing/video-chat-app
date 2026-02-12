@@ -8,6 +8,54 @@ type RemoteStreamMap = Record<string, MediaStream>;
 type PeerNameMap = Record<string, string>;
 type PeerShareMap = Record<string, boolean>;
 type PeerVideoEnabledMap = Record<string, boolean>;
+
+export type RoomJoinIntent = "create" | "join";
+export type RoomRole = "host" | "participant";
+export type RoomEntryState =
+  | "idle"
+  | "joining"
+  | "waiting"
+  | "joined"
+  | "room-not-found"
+  | "name-taken"
+  | "invalid-room"
+  | "invalid-name"
+  | "error"
+  | "revoked";
+
+export type RoomParticipant = {
+  id: string;
+  name: string;
+  role: RoomRole;
+};
+
+export type PendingParticipant = {
+  id: string;
+  name: string;
+  requestedAt: number;
+};
+
+type JoinRoomResponse = {
+  status?: string;
+  role?: RoomRole;
+  error?: string;
+  hostName?: string;
+};
+
+type ParticipantsPayload = {
+  participants?: RoomParticipant[];
+};
+
+type PendingRequestsPayload = {
+  requests?: PendingParticipant[];
+};
+
+type UseWebRTCOptions = {
+  intent?: RoomJoinIntent;
+  joinAttempt?: number;
+  enablePrejoinMedia?: boolean;
+};
+
 export type MediaDeviceOption = {
   deviceId: string;
   label: string;
@@ -17,7 +65,8 @@ const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
-export const useWebRTC = (roomId: string | null, name: string) => {
+export const useWebRTC = (roomId: string | null, name: string, options: UseWebRTCOptions = {}) => {
+  const { intent = "join", joinAttempt = 0, enablePrejoinMedia = false } = options;
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [localCameraStream, setLocalCameraStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<RemoteStreamMap>({});
@@ -36,9 +85,17 @@ export const useWebRTC = (roomId: string | null, name: string) => {
   const [videoInputDevices, setVideoInputDevices] = useState<MediaDeviceOption[]>([]);
   const [selectedAudioInputId, setSelectedAudioInputId] = useState("");
   const [selectedVideoInputId, setSelectedVideoInputId] = useState("");
+  const [roomEntryState, setRoomEntryState] = useState<RoomEntryState>("idle");
+  const [roomEntryError, setRoomEntryError] = useState("");
+  const [roomRole, setRoomRole] = useState<RoomRole | null>(null);
+  const [hostName, setHostName] = useState("");
+  const [participants, setParticipants] = useState<RoomParticipant[]>([]);
+  const [pendingParticipants, setPendingParticipants] = useState<PendingParticipant[]>([]);
+  const [admittingParticipantId, setAdmittingParticipantId] = useState<string | null>(null);
 
   const isScreenSharingRef = useRef(false);
   const isVideoEnabledRef = useRef(true);
+  const isMutedRef = useRef(false);
   const currentSharerIdRef = useRef<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -62,6 +119,10 @@ export const useWebRTC = (roomId: string | null, name: string) => {
   useEffect(() => {
     isVideoEnabledRef.current = isVideoEnabled;
   }, [isVideoEnabled]);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   useEffect(() => {
     currentSharerIdRef.current = currentSharerId;
@@ -224,8 +285,10 @@ export const useWebRTC = (roomId: string | null, name: string) => {
     [buildLocalStream, closePeerConnection]
   );
 
+  const shouldPrepareMedia = enablePrejoinMedia || Boolean(roomId && name.trim());
+
   useEffect(() => {
-    if (!roomId) return;
+    if (!shouldPrepareMedia) return;
     let active = true;
 
     navigator.mediaDevices
@@ -237,8 +300,12 @@ export const useWebRTC = (roomId: string | null, name: string) => {
         }
         audioTracksRef.current = mediaStream.getAudioTracks();
         cameraTrackRef.current = mediaStream.getVideoTracks()[0] ?? null;
+        audioTracksRef.current.forEach((track) => {
+          track.enabled = !isMutedRef.current;
+        });
         if (cameraTrackRef.current) {
           cameraTrackRef.current.contentHint = "motion";
+          cameraTrackRef.current.enabled = isVideoEnabledRef.current;
         }
         const combinedStream = buildLocalStream(cameraTrackRef.current);
         localStreamRef.current = combinedStream;
@@ -251,17 +318,22 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       })
       .catch(() => {
         setLocalStream(null);
+        setLocalCameraStream(null);
         setHasMedia(false);
+        setRoomEntryState("error");
+        setRoomEntryError(
+          "Unable to access camera and microphone. Please allow media permissions and retry."
+        );
         void refreshAvailableDevices();
       });
 
     return () => {
       active = false;
     };
-  }, [buildLocalStream, refreshAvailableDevices, roomId]);
+  }, [buildLocalStream, refreshAvailableDevices, shouldPrepareMedia]);
 
   useEffect(() => {
-    if (!roomId || typeof navigator === "undefined" || !navigator.mediaDevices) {
+    if (!shouldPrepareMedia || typeof navigator === "undefined" || !navigator.mediaDevices) {
       return;
     }
 
@@ -274,16 +346,15 @@ export const useWebRTC = (roomId: string | null, name: string) => {
     return () => {
       navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
     };
-  }, [refreshAvailableDevices, roomId]);
+  }, [refreshAvailableDevices, shouldPrepareMedia]);
 
   useEffect(() => {
-    if (!roomId || !hasMedia) return;
+    if (!roomId || !name.trim() || !hasMedia) return;
     const socket = getSocket();
     socketRef.current = socket;
     const peerConnections = peerConnectionsRef.current;
 
-    const joinRoom = () => {
-      socket.emit("join-room", { roomId, name });
+    const broadcastCurrentMediaState = () => {
       socket.emit("video-state", {
         roomId,
         videoEnabled: isVideoEnabledRef.current,
@@ -293,6 +364,52 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       }
     };
 
+    const applyJoinResponse = (response?: JoinRoomResponse) => {
+      if (response?.hostName) {
+        setHostName(response.hostName);
+      }
+
+      const status = response?.status;
+      if (status === "joined") {
+        setRoomEntryState("joined");
+        setRoomEntryError("");
+        setRoomRole(response?.role ?? null);
+        broadcastCurrentMediaState();
+        return;
+      }
+
+      if (status === "waiting") {
+        setRoomEntryState("waiting");
+        setRoomEntryError("");
+        setRoomRole("participant");
+        return;
+      }
+
+      if (
+        status === "room-not-found" ||
+        status === "name-taken" ||
+        status === "invalid-room" ||
+        status === "invalid-name"
+      ) {
+        setRoomEntryState(status);
+        setRoomEntryError(response?.error ?? "Unable to join this room.");
+        setRoomRole(null);
+        return;
+      }
+
+      setRoomEntryState("error");
+      setRoomEntryError(response?.error ?? "Unable to join this room right now.");
+      setRoomRole(null);
+    };
+
+    const joinRoom = () => {
+      setRoomEntryState("joining");
+      setRoomEntryError("");
+      socket.emit("join-room", { roomId, name, intent }, (response?: JoinRoomResponse) => {
+        applyJoinResponse(response);
+      });
+    };
+
     const handleConnect = () => {
       setMySocketId(socket.id ?? null);
       joinRoom();
@@ -300,6 +417,55 @@ export const useWebRTC = (roomId: string | null, name: string) => {
 
     const handleDisconnect = () => {
       setMySocketId(null);
+    };
+
+    const handleRoomEntryApproved = ({
+      role,
+      hostName: serverHostName,
+    }: {
+      role?: RoomRole;
+      hostName?: string;
+    }) => {
+      if (serverHostName) {
+        setHostName(serverHostName);
+      }
+      setRoomRole(role ?? "participant");
+      setRoomEntryState("joined");
+      setRoomEntryError("");
+      broadcastCurrentMediaState();
+    };
+
+    const handleRoomEntryWaiting = ({
+      hostName: serverHostName,
+    }: {
+      hostName?: string;
+    }) => {
+      if (serverHostName) {
+        setHostName(serverHostName);
+      }
+      setRoomRole("participant");
+      setRoomEntryState("waiting");
+      setRoomEntryError("");
+    };
+
+    const handleRoomEntryDenied = ({ reason }: { reason?: string }) => {
+      setRoomEntryState("error");
+      setRoomEntryError(reason ?? "Your join request was rejected.");
+      setRoomRole(null);
+    };
+
+    const handleRoomEntryRevoked = ({ reason }: { reason?: string }) => {
+      setRoomEntryState("revoked");
+      setRoomEntryError(reason ?? "Your room session has ended.");
+      setRoomRole(null);
+    };
+
+    const handleParticipantsUpdate = ({ participants: nextParticipants = [] }: ParticipantsPayload) => {
+      setParticipants(nextParticipants);
+    };
+
+    const handlePendingRequests = ({ requests = [] }: PendingRequestsPayload) => {
+      setPendingParticipants(requests);
     };
 
     const handleScreenSharer = ({ id }: { id: string | null }) => {
@@ -318,7 +484,7 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       }
     };
 
-    const handlePeers = (peers: Array<string | { id: string; name?: string }>) => {
+    const handlePeers = (peers: Array<string | { id: string; name?: string; role?: RoomRole }>) => {
       const names: PeerNameMap = {};
       for (const peer of peers) {
         const id = typeof peer === "string" ? peer : peer.id;
@@ -330,19 +496,19 @@ export const useWebRTC = (roomId: string | null, name: string) => {
         }
       }
       if (Object.keys(names).length) {
-        setPeerNames(names);
+        setPeerNames((prev) => ({ ...prev, ...names }));
       }
     };
 
     const handlePeerJoined = async (
-      payload: string | { id: string; name?: string }
+      payload: string | { id: string; name?: string; role?: RoomRole }
     ) => {
       const id = typeof payload === "string" ? payload : payload.id;
-      const name = typeof payload === "string" ? "Guest" : payload.name || "Guest";
+      const peerName = typeof payload === "string" ? "Guest" : payload.name || "Guest";
       if (!id) return;
       const peerConnection = createPeerConnection(id);
       if (peerConnection.signalingState !== "stable") {
-        setPeerNames((prev) => ({ ...prev, [id]: name || "Guest" }));
+        setPeerNames((prev) => ({ ...prev, [id]: peerName || "Guest" }));
         return;
       }
       if (isScreenSharingRef.current && screenStreamRef.current) {
@@ -362,19 +528,9 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       }
       setPeerNames((prev) => ({
         ...prev,
-        [id]: name || "Guest",
+        [id]: peerName || "Guest",
       }));
-      // Re-broadcast current camera state so newly joined peers receive it
-      // even when we toggled video before they entered the room.
-      if (roomId) {
-        socket.emit("video-state", {
-          roomId,
-          videoEnabled: isVideoEnabledRef.current,
-        });
-      }
-      if (roomId && isScreenSharingRef.current) {
-        socket.emit("screen-share", { roomId, isSharing: true });
-      }
+      broadcastCurrentMediaState();
     };
 
     const handleOffer = async ({
@@ -413,7 +569,13 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       }
     };
 
-    const handleAnswer = async ({ from, sdp }: { from: string; sdp: RTCSessionDescriptionInit }) => {
+    const handleAnswer = async ({
+      from,
+      sdp,
+    }: {
+      from: string;
+      sdp: RTCSessionDescriptionInit;
+    }) => {
       const peerConnection = peerConnectionsRef.current.get(from);
       if (!peerConnection) return;
       await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
@@ -498,6 +660,12 @@ export const useWebRTC = (roomId: string | null, name: string) => {
 
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
+    socket.on("room-entry-approved", handleRoomEntryApproved);
+    socket.on("room-entry-waiting", handleRoomEntryWaiting);
+    socket.on("room-entry-denied", handleRoomEntryDenied);
+    socket.on("room-entry-revoked", handleRoomEntryRevoked);
+    socket.on("participants-update", handleParticipantsUpdate);
+    socket.on("pending-requests", handlePendingRequests);
     socket.on("peers", handlePeers);
     socket.on("peer-joined", handlePeerJoined);
     socket.on("offer", handleOffer);
@@ -516,6 +684,12 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       socket.emit("leave-room", { roomId });
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
+      socket.off("room-entry-approved", handleRoomEntryApproved);
+      socket.off("room-entry-waiting", handleRoomEntryWaiting);
+      socket.off("room-entry-denied", handleRoomEntryDenied);
+      socket.off("room-entry-revoked", handleRoomEntryRevoked);
+      socket.off("participants-update", handleParticipantsUpdate);
+      socket.off("pending-requests", handlePendingRequests);
       socket.off("peers", handlePeers);
       socket.off("peer-joined", handlePeerJoined);
       socket.off("offer", handleOffer);
@@ -527,21 +701,12 @@ export const useWebRTC = (roomId: string | null, name: string) => {
       socket.off("peer-video-state", handlePeerVideoState);
       const peerIds = Array.from(peerConnections.keys());
       peerIds.forEach((peerId) => closePeerConnection(peerId));
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      if (cameraTrackRef.current) {
-        cameraTrackRef.current.stop();
-        cameraTrackRef.current = null;
-      }
-      audioTracksRef.current.forEach((track) => track.stop());
-      audioTracksRef.current = [];
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach((t) => t.stop());
         screenStreamRef.current = null;
       }
     };
-  }, [closePeerConnection, createPeerConnection, hasMedia, name, roomId]);
+  }, [closePeerConnection, createPeerConnection, hasMedia, intent, joinAttempt, name, roomId]);
 
   useEffect(() => {
     return () => {
@@ -683,12 +848,15 @@ export const useWebRTC = (roomId: string | null, name: string) => {
   );
 
   const toggleMute = useCallback(() => {
-    const nextMuted = !isMuted;
-    audioTracksRef.current.forEach((track) => {
-      track.enabled = !nextMuted;
+    setIsMuted((current) => {
+      const nextMuted = !current;
+      isMutedRef.current = nextMuted;
+      audioTracksRef.current.forEach((track) => {
+        track.enabled = !nextMuted;
+      });
+      return nextMuted;
     });
-    setIsMuted(nextMuted);
-  }, [isMuted]);
+  }, []);
 
   const toggleVideo = useCallback(() => {
     const next = !isVideoEnabled;
@@ -829,6 +997,40 @@ export const useWebRTC = (roomId: string | null, name: string) => {
     }
   }, []);
 
+  const admitParticipant = useCallback(
+    async (participantId: string) => {
+      if (!roomId || !participantId) {
+        return { ok: false, error: "Invalid admission request." };
+      }
+
+      const socket = socketRef.current ?? getSocket();
+      setAdmittingParticipantId(participantId);
+
+      return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        socket.emit(
+          "admit-participant",
+          { roomId, socketId: participantId },
+          (response?: { ok?: boolean; error?: string }) => {
+            setAdmittingParticipantId((current) =>
+              current === participantId ? null : current
+            );
+
+            if (response?.ok) {
+              resolve({ ok: true });
+              return;
+            }
+
+            resolve({
+              ok: false,
+              error: response?.error ?? "Unable to admit participant right now.",
+            });
+          }
+        );
+      });
+    },
+    [roomId]
+  );
+
   const isLocalSharer =
     currentSharerId === null
       ? isScreenSharing
@@ -837,6 +1039,14 @@ export const useWebRTC = (roomId: string | null, name: string) => {
         : currentSharerId === mySocketId;
 
   return {
+    roomEntryState,
+    roomEntryError,
+    roomRole,
+    hostName,
+    participants,
+    pendingParticipants,
+    admittingParticipantId,
+    admitParticipant,
     localStream,
     localCameraStream,
     remoteStreams,
