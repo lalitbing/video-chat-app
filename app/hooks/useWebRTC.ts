@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Socket } from "socket.io-client";
-import { getSocket } from "@/app/lib/socket";
+import type { RoomConnection } from "@/app/lib/roomConnection";
+import { getRoomConnection } from "@/app/lib/roomConnection";
 
 type RemoteStreamMap = Record<string, MediaStream>;
 type PeerNameMap = Record<string, string>;
@@ -98,7 +98,7 @@ export const useWebRTC = (roomId: string | null, name: string, options: UseWebRT
   const isMutedRef = useRef(false);
   const currentSharerIdRef = useRef<string | null>(null);
 
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef = useRef<RoomConnection | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
@@ -350,7 +350,7 @@ export const useWebRTC = (roomId: string | null, name: string, options: UseWebRT
 
   useEffect(() => {
     if (!roomId || !name.trim() || !hasMedia) return;
-    const socket = getSocket();
+    const socket = getRoomConnection();
     socketRef.current = socket;
     const peerConnections = peerConnectionsRef.current;
 
@@ -1003,7 +1003,7 @@ export const useWebRTC = (roomId: string | null, name: string, options: UseWebRT
         return { ok: false, error: "Invalid admission request." };
       }
 
-      const socket = socketRef.current ?? getSocket();
+      const socket = socketRef.current ?? getRoomConnection();
       setAdmittingParticipantId(participantId);
 
       return new Promise<{ ok: boolean; error?: string }>((resolve) => {

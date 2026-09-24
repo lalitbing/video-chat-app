@@ -1,123 +1,54 @@
-# Step-by-step: Host VC Meet (Vercel + Railway)
+# Deploy VC Meet (Vercel + Convex)
 
-Use this guide to deploy the frontend on **Vercel** and the socket server on **Railway**. No database needed.
-
----
-
-## Before you start
-
-- Code is in a **Git repo** (GitHub, GitLab, or Bitbucket) and pushed.
-- You have accounts on [Vercel](https://vercel.com) and [Railway](https://railway.app).
+The frontend runs on **Vercel** and the realtime backend on **Convex**. There is no separate socket server to host.
 
 ---
 
-## Part 1: Deploy the Socket server on Railway
+## 1. Create the Convex project
 
-### Step 1.1 — Create a new project
+On your machine, in the project folder:
 
-1. Go to [railway.app](https://railway.app) and log in.
-2. Click **New Project**.
-3. Choose **Deploy from GitHub repo** (or GitLab/Bitbucket) and select this **video-chat-app** repo.
-4. Railway will create a project and try to deploy. We’ll fix the start command next.
+```bash
+npx convex dev
+```
 
-### Step 1.2 — Configure the service
+- Log in when prompted and create a new project (e.g. `vc-meet`).
+- This creates a **dev** deployment, pushes the functions in `convex/`, and writes `CONVEX_DEPLOYMENT` and `NEXT_PUBLIC_CONVEX_URL` to `.env.local`.
+- Commit the generated `convex/_generated` folder.
 
-1. In the project, open the **service** that was created (the one linked to your repo).
-2. Go to the **Settings** tab.
-3. Find **Build** or **Deploy**:
-   - **Build Command:** leave default (e.g. `npm install` or blank).
-   - **Start Command:** set to:
-     ```bash
-     npm run start:socket
-     ```
-   - **Root Directory:** leave blank (project root).
-4. Under **Variables** (or **Environment**), add:
-   - **Name:** `CORS_ORIGIN`  
-   - **Value:** you’ll set this in Part 2 after you have your Vercel URL. For now you can use `*` so the server starts (we’ll tighten it later).
-5. Save. Railway will redeploy.
+## 2. Get a production deploy key
 
-### Step 1.3 — Get the public URL
+1. Open the [Convex dashboard](https://dashboard.convex.dev) and select your project.
+2. Switch to the **Production** deployment.
+3. Go to **Settings → URL & Deploy Key** and click **Generate Production Deploy Key**.
+4. Copy the key.
 
-1. In the same service, go to **Settings**.
-2. Find **Networking** or **Public Networking** / **Generate domain**.
-3. Click **Generate domain** (or similar). Railway will assign a URL like `https://video-chat-app-production-xxxx.up.railway.app`.
-4. **Copy this URL** (no trailing slash). You’ll use it in Part 2.
+## 3. Configure Vercel
 
----
+In your Vercel project, go to **Settings**:
 
-## Part 2: Deploy the Frontend on Vercel
+1. **Environment Variables**
+   - Add `CONVEX_DEPLOY_KEY` = the key from step 2 (Production environment).
+   - Remove the old `NEXT_PUBLIC_SOCKET_URL`, which is no longer used.
+2. **Build & Development Settings → Build Command** (override):
+   ```bash
+   npx convex deploy --cmd 'npm run build'
+   ```
+   This pushes the Convex functions to production, then builds Next.js with `NEXT_PUBLIC_CONVEX_URL` set to the production URL.
+3. Redeploy.
 
-### Step 2.1 — Import the project
+## 4. Test
 
-1. Go to [vercel.com](https://vercel.com) and log in.
-2. Click **Add New…** → **Project**.
-3. Import the same **video-chat-app** repo (connect the Git provider if needed).
-4. Click **Import**.
+1. Open your Vercel URL, enter a name, and create a room.
+2. In another browser or device, join the same room ID. The host sees the request and admits you.
+3. Check that video, chat, and screen share work. Closing a tab should remove that person from the other side within a second or two.
 
-### Step 2.2 — Configure build (don’t change much)
+## Troubleshooting
 
-1. **Framework Preset:** Next.js (auto-detected).
-2. **Build Command:** leave as `next build` (default).
-3. **Output Directory:** leave default.
-4. **Install Command:** leave default (`npm install` or similar).
-5. Do **not** set a custom “Start” or “Run” command — Vercel runs the built Next.js app; we are not using the custom Node server here.
+- **"Unable to check room right now"**: the app can't reach Convex. Check that the latest Vercel build log shows `npx convex deploy` succeeding and that the Convex production deployment is running (dashboard → Health).
+- **"NEXT_PUBLIC_CONVEX_URL is not set"**: the Vercel build command wasn't changed, so the Convex URL was never injected. Redo step 3.
+- **Calls fail to connect on some networks**: the app uses only a public STUN server. Strict corporate or mobile networks may need a TURN server added to `rtcConfig` in `app/hooks/useWebRTC.ts`.
 
-### Step 2.3 — Add environment variable
+## Free plan usage
 
-1. Expand **Environment Variables**.
-2. Add one variable:
-   - **Name:** `NEXT_PUBLIC_SOCKET_URL`
-   - **Value:** the Railway URL you copied in Step 1.3, e.g. `https://video-chat-app-production-xxxx.up.railway.app` (no trailing slash).
-   - **Environment:** leave all checked (Production, Preview, Development) or at least Production.
-3. Click **Deploy**. Wait for the build to finish.
-
-### Step 2.4 — Get your Vercel URL
-
-1. After deploy, Vercel shows the live URL, e.g. `https://video-chat-app-xxx.vercel.app`.
-2. **Copy this URL** (no trailing slash).
-
----
-
-## Part 3: Lock down CORS on Railway
-
-So only your Vercel app can talk to the socket server:
-
-1. In **Railway**, open your socket service → **Variables**.
-2. Set **CORS_ORIGIN** to your Vercel URL, e.g. `https://video-chat-app-xxx.vercel.app`.
-   - For multiple URLs (e.g. preview deployments), use a comma-separated list:  
-     `https://your-app.vercel.app,https://your-app-xxx.vercel.app`
-3. Save. Railway will redeploy the socket server.
-
----
-
-## Part 4: Test the app
-
-1. Open your **Vercel URL** in the browser.
-2. Enter a name, create or join a room.
-3. Open the same room URL in another tab or device and confirm:
-   - Video/audio works.
-   - Chat works.
-   - Screen share works (if you use it).
-
-If the second client never connects or you see **CORS** errors (“No 'Access-Control-Allow-Origin' header”):
-
-- In **Railway** → your socket service → **Variables**, set **CORS_ORIGIN** to your **exact** Vercel origin:  
-  `https://video-chat-app-orcin.vercel.app` (no trailing slash).  
-  For multiple origins use a comma-separated list.
-- Save so Railway redeploys the socket server. The browser only allows requests when the server sends this header for your frontend origin.
-
-Also check:
-
-- **NEXT_PUBLIC_SOCKET_URL** on Vercel is exactly the Railway URL (no trailing slash).
-- Redeploy both after changing env vars.
-
----
-
-## Quick reference
-
-| Where   | What to set |
-|--------|-------------|
-| **Railway** | Start: `npm run start:socket` · Variable: `CORS_ORIGIN` = your Vercel URL(s) |
-| **Vercel**  | Variable: `NEXT_PUBLIC_SOCKET_URL` = your Railway URL |
-
-**Order:** Deploy Railway first → copy Railway URL → deploy Vercel with that URL → then set `CORS_ORIGIN` on Railway to the Vercel URL.
+Rough cost per meeting: one heartbeat per participant every 10 s, one sweep per room every 15 s, and a few dozen signaling calls per participant when joining. A 2-person, 1-hour call uses about 1,000–1,500 function calls, so Convex's free 1M calls/month covers several hundred meeting-hours.

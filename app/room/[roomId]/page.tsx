@@ -12,10 +12,10 @@ import { useChat } from "@/app/hooks/useChat";
 import { useWebRTC } from "@/app/hooks/useWebRTC";
 import { MicIcon, MicOffIcon, VideoOffIcon, VideoOnIcon } from "@/app/icons";
 import { consumePendingLandingLaunch } from "@/app/lib/landingLaunch";
-import { getSocket } from "@/app/lib/socket";
+import { getRoomConnection } from "@/app/lib/roomConnection";
 import { normalizeRoomId } from "@/app/lib/room";
 
-const ROOM_CHECK_TIMEOUT_MS = 3000;
+const ROOM_CHECK_TIMEOUT_MS = 8000;
 const REDIRECT_DELAY_MS = 2500;
 const HOST_END_REDIRECT_DELAY_MS = 2200;
 const TOAST_AUTO_HIDE_MS = 3000;
@@ -146,7 +146,7 @@ export default function RoomPage() {
   useEffect(() => {
     if (!isLaunchBootstrapComplete || !normalizedRoomId || launchIntent === "create") return;
 
-    const socket = getSocket();
+    const socket = getRoomConnection();
     socket.connect();
 
     let settled = false;
@@ -316,7 +316,7 @@ export default function RoomPage() {
   useEffect(() => {
     if (!normalizedRoomId) return;
 
-    const socket = getSocket();
+    const socket = getRoomConnection();
     let redirectTimer: number | null = null;
 
     const handleMeetingEnded = (payload: MeetingEndedPayload = {}) => {
@@ -467,7 +467,7 @@ export default function RoomPage() {
       return;
     }
 
-    const socket = getSocket();
+    const socket = getRoomConnection();
     setIsEndingMeeting(true);
 
     socket.emit("end-meeting", { roomId: normalizedRoomId }, (response?: EndMeetingAck) => {

@@ -3,11 +3,11 @@
 import { Suspense, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
-import { getSocket } from "@/app/lib/socket";
+import { getRoomConnection } from "@/app/lib/roomConnection";
 import { generateRoomId, normalizeRoomId, sanitizeRoomInput } from "@/app/lib/room";
 import { setPendingLandingLaunch } from "@/app/lib/landingLaunch";
 
-const ROOM_CHECK_TIMEOUT_MS = 3000;
+const ROOM_CHECK_TIMEOUT_MS = 8000;
 const MAX_CREATE_ROOM_RETRIES = 10;
 
 type RoomExistsAck = {
@@ -51,7 +51,7 @@ function HomeContent() {
       return Promise.reject(new Error("Room lookup is only available in the browser."));
     }
 
-    const socket = getSocket();
+    const socket = getRoomConnection();
     socket.connect();
 
     return new Promise<boolean>((resolve, reject) => {

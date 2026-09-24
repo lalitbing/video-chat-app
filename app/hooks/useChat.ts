@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getSocket } from "@/app/lib/socket";
+import { getRoomConnection } from "@/app/lib/roomConnection";
 
 export type ChatMessage = {
   id: string;
@@ -21,7 +21,7 @@ export const useChat = (roomId: string | null, options: UseChatOptions = {}) => 
 
   useEffect(() => {
     if (!roomId) return;
-    const socket = getSocket();
+    const socket = getRoomConnection();
     const roomKey = roomId;
     const handler = (payload: ChatMessage) => {
       setMessagesByRoom((prev) => {
@@ -44,7 +44,7 @@ export const useChat = (roomId: string | null, options: UseChatOptions = {}) => 
   const sendMessage = useCallback(
     (message: string, name?: string) => {
       if (!roomId || !message.trim()) return;
-      const socket = getSocket();
+      const socket = getRoomConnection();
       socket.emit("chat-message", { roomId, message: message.trim(), name });
     },
     [roomId]
