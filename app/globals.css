@@ -105,7 +105,8 @@
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
-  font-family: var(--font-sans);
+  /* Tailwind only emits theme variables that utilities use, so reference the font directly. */
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
 }
 
 ::selection {

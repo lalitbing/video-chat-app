@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/app/components/ui/Avatar";
 import { SpeakingBars } from "@/app/components/ui/SpeakingBars";
 import { useSpeaking } from "@/app/hooks/useSpeaking";
@@ -40,6 +40,39 @@ export const VideoTile = ({
 }: VideoTileProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isSpeaking = useSpeaking(stream, detectSpeaking);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isPortraitVideo, setIsPortraitVideo] = useState(false);
+  const [isPortraitBox, setIsPortraitBox] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setIsPortraitBox(height > width);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  // Phones held upright send portrait video; track it so we show the whole frame
+  // instead of cropping it to fill a landscape tile.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const update = () => {
+      if (video.videoWidth && video.videoHeight) {
+        setIsPortraitVideo(video.videoHeight > video.videoWidth * 1.05);
+      }
+    };
+    video.addEventListener("loadedmetadata", update);
+    video.addEventListener("resize", update);
+    update();
+    return () => {
+      video.removeEventListener("loadedmetadata", update);
+      video.removeEventListener("resize", update);
+    };
+  }, [stream]);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -54,16 +87,22 @@ export const VideoTile = ({
     ? "h-full w-full min-h-0 rounded-[24px]"
     : fill
       ? "h-full w-full min-h-0 rounded-[20px]"
-      : "aspect-video w-full shrink-0 rounded-[18px]";
+      : isPortraitVideo
+        ? "aspect-[3/4] w-full shrink-0 rounded-[18px]"
+        : "aspect-video w-full shrink-0 rounded-[18px]";
 
+  // Only zoom-to-fill when the video and its box have the same orientation;
+  // otherwise show the whole frame so a phone feed isn't cropped to its middle.
+  const effectiveFit = isPortraitVideo !== isPortraitBox ? "contain" : objectFit;
   const videoClass =
-    objectFit === "contain" ? "h-full w-full object-contain" : "h-full w-full object-cover";
+    effectiveFit === "contain" ? "h-full w-full object-contain" : "h-full w-full object-cover";
 
   const showPlaceholder = Boolean(showVideoOffPlaceholder && placeholderLetter);
   const personName = avatarName ?? label;
 
   return (
     <div
+      ref={containerRef}
       className={`relative overflow-hidden bg-gradient-to-br from-[#1b2536] to-[#121925] ring-1 transition-[box-shadow] duration-200 ${
         isSpeaking ? "ring-2 ring-accent shadow-[0_0_0_4px_rgba(47,123,246,0.18)]" : "ring-white/5"
       } ${containerClass} ${className}`}

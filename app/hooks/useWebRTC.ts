@@ -63,10 +63,16 @@ export type MediaDeviceOption = {
 
 // Every extra participant means another encode and decode per tab (mesh), so keep
 // camera capture modest: 360p at 24fps is plenty for tiles this size.
-const cameraConstraints: MediaTrackConstraints = {
-  width: { ideal: 640 },
-  height: { ideal: 360 },
-  frameRate: { ideal: 24, max: 24 },
+// Phones held upright get a portrait request; asking them for landscape makes the
+// browser crop the sensor and zoom into the middle of the frame.
+const getCameraConstraints = (): MediaTrackConstraints => {
+  const isPortraitScreen =
+    typeof window !== "undefined" && window.matchMedia("(orientation: portrait)").matches;
+  return {
+    width: { ideal: isPortraitScreen ? 360 : 640 },
+    height: { ideal: isPortraitScreen ? 640 : 360 },
+    frameRate: { ideal: 24, max: 24 },
+  };
 };
 
 const rtcConfig: RTCConfiguration = {
@@ -300,7 +306,7 @@ export const useWebRTC = (roomId: string | null, name: string, options: UseWebRT
     let active = true;
 
     navigator.mediaDevices
-      .getUserMedia({ video: cameraConstraints, audio: true })
+      .getUserMedia({ video: getCameraConstraints(), audio: true })
       .then((mediaStream) => {
         if (!active) {
           mediaStream.getTracks().forEach((track) => track.stop());
@@ -803,7 +809,7 @@ export const useWebRTC = (roomId: string | null, name: string, options: UseWebRT
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { ...cameraConstraints, deviceId: { exact: deviceId } },
+          video: { ...getCameraConstraints(), deviceId: { exact: deviceId } },
           audio: false,
         });
         const nextCameraTrack = stream.getVideoTracks()[0] ?? null;

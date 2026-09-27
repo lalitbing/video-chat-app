@@ -147,7 +147,11 @@ export const VideoGrid = ({
         </div>
 
         <div className="flex h-28 shrink-0 gap-3 overflow-x-auto md:h-auto md:w-[min(28vw,18rem)] md:flex-col md:overflow-y-auto md:overflow-x-hidden">
-          {cameraTiles.map((tile) => renderTile(tile, { className: "w-44 md:w-full" }))}
+          {cameraTiles.map((tile) => (
+            <div key={tile.key} className="h-full w-44 shrink-0 md:aspect-video md:h-auto md:w-full">
+              {renderTile(tile, { fill: true })}
+            </div>
+          ))}
         </div>
       </div>
     );

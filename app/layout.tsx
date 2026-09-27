@@ -24,10 +24,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${jakarta.variable} ${geistMono.variable} antialiased`}
-      >
+    // Font variables live on <html> because the theme's --font-sans is resolved on :root.
+    <html lang="en" className={`${jakarta.variable} ${geistMono.variable}`}>
+      <body className="antialiased">
         {children}
         <Analytics />
       </body>
