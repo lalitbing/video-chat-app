@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useRef, type ReactNode } from "react";
 import { VideoTile } from "@/app/components/VideoTile";
+import { Avatar } from "@/app/components/ui/Avatar";
+import { ScreenShareIcon } from "@/app/icons";
 
 type VideoGridProps = {
   localStream: MediaStream | null;
@@ -14,6 +17,39 @@ type VideoGridProps = {
   isLocalSharer: boolean;
   isVideoEnabled: boolean;
   localDisplayName: string;
+  /** Call controls, floated over the featured tile. */
+  controls?: ReactNode;
+  onShowAllParticipants?: () => void;
+};
+
+type TileSpec = {
+  key: string;
+  stream: MediaStream | null;
+  label: string;
+  avatarName: string;
+  muted: boolean;
+  mirrored: boolean;
+  videoOff: boolean;
+};
+
+// Tiles shown under the featured video before collapsing the rest into "+N more".
+const MAX_STRIP_TILES = 4;
+
+const initialOf = (name: string) => name.trim().charAt(0).toUpperCase() || "?";
+
+// Keeps audio playing for people collapsed into the "+N more" tile.
+const HiddenAudio = ({ stream }: { stream: MediaStream | null }) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    audioRef.current.srcObject = stream;
+    if (stream?.active) {
+      audioRef.current.play().catch(() => {});
+    }
+  }, [stream]);
+
+  return <audio ref={audioRef} autoPlay className="hidden" />;
 };
 
 export const VideoGrid = ({
@@ -28,191 +64,186 @@ export const VideoGrid = ({
   isLocalSharer,
   isVideoEnabled,
   localDisplayName,
+  controls,
+  onShowAllParticipants,
 }: VideoGridProps) => {
-  const localInitial = localDisplayName.trim().charAt(0).toUpperCase() || "?";
+  const localName = localDisplayName.trim() || "You";
   const remoteEntries = Object.entries(remoteStreams);
   const hasSharer = currentSharerId !== null;
+
+  const renderTile = (tile: TileSpec, options: { fill?: boolean; className?: string } = {}) => (
+    <VideoTile
+      key={tile.key}
+      stream={tile.stream}
+      label={tile.label}
+      avatarName={tile.avatarName}
+      muted={tile.muted}
+      mirrored={tile.mirrored}
+      size="small"
+      fill={options.fill}
+      objectFit="cover"
+      showVideoOffPlaceholder={tile.videoOff}
+      placeholderLetter={initialOf(tile.avatarName)}
+      className={options.className}
+    />
+  );
+
+  const controlsDock = controls ? (
+    <div className="absolute inset-x-0 bottom-4 z-20 flex justify-center px-3 sm:bottom-5">{controls}</div>
+  ) : null;
 
   if (hasSharer) {
     const sharerStream = isLocalSharer
       ? localStream
       : remoteScreenStreams[currentSharerId] ?? remoteStreams[currentSharerId] ?? null;
-    const sharerName = isLocalSharer
-      ? "You (shared screen)"
-      : `${peerNames[currentSharerId] ?? "Someone"} (shared screen)`;
+    const sharerName = isLocalSharer ? "You" : peerNames[currentSharerId] ?? "Someone";
 
-    const cameraTiles: Array<{
-      key: string;
-      stream: MediaStream | null;
-      label: string;
-      muted: boolean;
-      mirrored: boolean;
-      showVideoOffPlaceholder?: boolean;
-      placeholderLetter?: string;
-    }> = [];
-
-    if (isLocalSharer) {
-      cameraTiles.push({
+    const cameraTiles: TileSpec[] = [
+      {
         key: "you-camera",
-        stream: localCameraStream,
+        stream: isLocalSharer ? localCameraStream : localStream,
         label: "You",
+        avatarName: localName,
         muted: true,
-        mirrored: true,
-      });
-    } else {
-      cameraTiles.push({
-        key: "you-camera",
-        stream: localStream,
-        label: "You",
-        muted: true,
-        mirrored: !isLocalScreenSharing,
-      });
-    }
+        mirrored: isLocalSharer || !isLocalScreenSharing,
+        videoOff: !isVideoEnabled,
+      },
+    ];
 
     remoteEntries.forEach(([peerId, stream], index) => {
       const name = peerNames[peerId] ?? `Participant ${index + 1}`;
-      const peerInitial = name.trim().charAt(0).toUpperCase() || "?";
-      const videoOff = peerVideoEnabled[peerId] === false;
-      if (peerId === currentSharerId) {
-        const cam = remoteStreams[peerId] ?? null;
-        if (cam) {
-          cameraTiles.push({
-            key: `${peerId}-camera`,
-            stream: cam,
-            label: name,
-            muted: false,
-            mirrored: false,
-            showVideoOffPlaceholder: videoOff,
-            placeholderLetter: peerInitial,
-          });
-        }
-        return;
-      }
       cameraTiles.push({
-        key: peerId,
-        stream,
+        key: peerId === currentSharerId ? `${peerId}-camera` : peerId,
+        stream: peerId === currentSharerId ? remoteStreams[peerId] ?? null : stream,
         label: name,
+        avatarName: name,
         muted: false,
         mirrored: false,
-        showVideoOffPlaceholder: videoOff,
-        placeholderLetter: peerInitial,
+        videoOff: peerVideoEnabled[peerId] === false,
       });
     });
 
     return (
-      <div className="flex h-full w-full flex-row gap-0">
-        {/* Shared content - left, max height/width, object-contain */}
-        <div className="flex min-h-0 flex-1 items-center justify-center bg-zinc-950 p-2">
-          <div className="relative max-h-full max-w-full flex-1 min-w-0 min-h-0 overflow-hidden rounded-xl bg-zinc-900">
-            <VideoTile
-              key={isLocalSharer ? "local-share" : `remote-share-${currentSharerId}`}
-              stream={sharerStream}
-              label={sharerName}
-              muted={isLocalSharer}
-              mirrored={false}
-              size="large"
-              objectFit="contain"
-            />
+      <div className="flex h-full w-full flex-col gap-3 md:flex-row">
+        <div className="relative min-h-0 min-w-0 flex-1">
+          <VideoTile
+            key={isLocalSharer ? "local-share" : `remote-share-${currentSharerId}`}
+            stream={sharerStream}
+            label={isLocalSharer ? "Your screen" : `${sharerName}'s screen`}
+            muted={isLocalSharer}
+            mirrored={false}
+            size="large"
+            objectFit="contain"
+            detectSpeaking={false}
+            hideLabel
+          />
+          <div className="glass pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-full py-1.5 pl-2 pr-3 text-xs font-semibold text-white ring-1 ring-white/10">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent">
+              <ScreenShareIcon className="h-3 w-3" />
+            </span>
+            {isLocalSharer ? "You're presenting" : `${sharerName} is presenting`}
           </div>
+          {controlsDock}
         </div>
-        {/* Video feeds - right, fixed width, scrollable, centered when few */}
-        <div className="flex h-full w-[min(35vw,22rem)] min-w-[16rem] shrink-0 flex-col gap-3 overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-3">
-          {cameraTiles.map(
-            ({
-              key,
-              stream,
-              label,
-              muted,
-              mirrored,
-              showVideoOffPlaceholder,
-              placeholderLetter,
-            }) => (
-              <VideoTile
-                key={key}
-                stream={stream}
-                label={label}
-                muted={muted}
-                mirrored={mirrored}
-                size="small"
-                showVideoOffPlaceholder={
-                  showVideoOffPlaceholder ??
-                  (label === "You" ? !isVideoEnabled : undefined)
-                }
-                placeholderLetter={
-                  placeholderLetter ?? (label === "You" ? localInitial : undefined)
-                }
-              />
-            )
-          )}
+
+        <div className="flex h-28 shrink-0 gap-3 overflow-x-auto md:h-auto md:w-[min(28vw,18rem)] md:flex-col md:overflow-y-auto md:overflow-x-hidden">
+          {cameraTiles.map((tile) => renderTile(tile, { className: "w-44 md:w-full" }))}
         </div>
       </div>
     );
   }
 
-  const stageEntry = remoteEntries.length > 0 ? remoteEntries[0] : null;
-  const stagePeerId = stageEntry?.[0] ?? null;
-  const stageStream = stageEntry?.[1] ?? localStream;
-  const stageLabel = stagePeerId ? peerNames[stagePeerId] ?? "Participant 1" : "You";
-  const stageInitial = stageLabel.trim().charAt(0).toUpperCase() || "?";
-  const stageVideoOff = stagePeerId
-    ? peerVideoEnabled[stagePeerId] === false
-    : !isVideoEnabled;
-  const secondaryRemoteEntries = stagePeerId
-    ? remoteEntries.filter(([peerId]) => peerId !== stagePeerId)
-    : [];
+  const localTile: TileSpec = {
+    key: "local",
+    stream: localStream,
+    label: "You",
+    avatarName: localName,
+    muted: true,
+    mirrored: !isLocalScreenSharing,
+    videoOff: !isVideoEnabled,
+  };
+
+  const remoteTiles: TileSpec[] = remoteEntries.map(([peerId, stream], index) => {
+    const name = peerNames[peerId] ?? `Participant ${index + 1}`;
+    return {
+      key: peerId,
+      stream,
+      label: name,
+      avatarName: name,
+      muted: false,
+      mirrored: false,
+      videoOff: peerVideoEnabled[peerId] === false,
+    };
+  });
+
+  const featured = remoteTiles[0] ?? localTile;
+  const isAlone = remoteTiles.length === 0;
+  const showPictureInPicture = remoteTiles.length === 1;
+  const stripTiles = remoteTiles.length >= 2 ? [localTile, ...remoteTiles.slice(1)] : [];
+  const overflowCount =
+    stripTiles.length > MAX_STRIP_TILES ? stripTiles.length - (MAX_STRIP_TILES - 1) : 0;
+  const visibleStripTiles = overflowCount ? stripTiles.slice(0, MAX_STRIP_TILES - 1) : stripTiles;
+  const hiddenStripTiles = overflowCount ? stripTiles.slice(MAX_STRIP_TILES - 1) : [];
+  const stripColumns = visibleStripTiles.length + (overflowCount ? 1 : 0);
 
   return (
-    <div className="h-full w-full p-3">
-      <div className="relative h-full w-full overflow-hidden rounded-3xl bg-zinc-950">
+    <div className="flex h-full w-full flex-col gap-3">
+      <div className="relative min-h-0 flex-[1.7]">
         <VideoTile
-          stream={stageStream}
-          label={stageLabel}
-          muted={!stagePeerId}
-          mirrored={!stagePeerId && !isLocalScreenSharing}
+          stream={featured.stream}
+          label={featured.label}
+          avatarName={featured.avatarName}
+          muted={featured.muted}
+          mirrored={featured.mirrored}
           size="large"
-          objectFit="contain"
-          showVideoOffPlaceholder={stageVideoOff}
-          placeholderLetter={stageVideoOff ? stageInitial : undefined}
+          objectFit="cover"
+          showVideoOffPlaceholder={featured.videoOff}
+          placeholderLetter={initialOf(featured.avatarName)}
         />
 
-        {remoteEntries.length === 0 ? (
-          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-4 py-2 text-sm text-zinc-200">
+        {isAlone ? (
+          <div className="glass pointer-events-none absolute left-1/2 top-16 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium text-ink ring-1 ring-white/10 sm:top-5">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-warn" />
             Waiting for others to join...
           </div>
-        ) : (
-          <div className="absolute bottom-4 right-4 z-20 flex max-h-[72%] w-56 flex-col gap-2 overflow-y-auto sm:w-64 rounded-2xl">
-            <div className="rounded-2xl border border-white/20 bg-zinc-900/60 p-[2px] shadow-[0_14px_36px_rgba(0,0,0,0.62)]">
-              <VideoTile
-                stream={localStream}
-                label="You"
-                muted
-                mirrored={!isLocalScreenSharing}
-                size="small"
-                showVideoOffPlaceholder={!isVideoEnabled}
-                placeholderLetter={localInitial}
-              />
-            </div>
+        ) : null}
 
-            {secondaryRemoteEntries.map(([peerId, stream], index) => {
-              const name = peerNames[peerId] ?? `Participant ${index + 2}`;
-              const peerInitial = name.trim().charAt(0).toUpperCase() || "?";
-              const videoOff = peerVideoEnabled[peerId] === false;
-
-              return (
-                <VideoTile
-                  key={peerId}
-                  stream={stream}
-                  label={name}
-                  mirrored={false}
-                  size="small"
-                  showVideoOffPlaceholder={videoOff || undefined}
-                  placeholderLetter={videoOff ? peerInitial : undefined}
-                />
-              );
-            })}
+        {showPictureInPicture ? (
+          <div className="absolute right-3 top-3 z-10 w-36 overflow-hidden rounded-[18px] shadow-[0_18px_40px_-10px_rgba(0,0,0,0.75)] ring-1 ring-white/15 sm:right-4 sm:top-4 sm:w-56">
+            {renderTile(localTile)}
           </div>
-        )}
+        ) : null}
+
+        {controlsDock}
       </div>
+
+      {stripColumns > 0 ? (
+        <div
+          className="grid min-h-[96px] flex-1 gap-3"
+          style={{ gridTemplateColumns: `repeat(${stripColumns}, minmax(0, 1fr))` }}
+        >
+          {visibleStripTiles.map((tile) => renderTile(tile, { fill: true }))}
+          {overflowCount ? (
+            <button
+              type="button"
+              onClick={onShowAllParticipants}
+              className="group flex min-h-0 flex-col items-center justify-center gap-2 rounded-[20px] bg-gradient-to-br from-[#26324a] to-[#1a2335] text-ink ring-1 ring-white/5 transition hover:ring-accent/60"
+            >
+              <span className="flex -space-x-2">
+                {stripTiles.slice(MAX_STRIP_TILES - 1, MAX_STRIP_TILES + 2).map((tile) => (
+                  <Avatar key={tile.key} name={tile.avatarName} size="sm" className="ring-2 ring-[#222c40]" />
+                ))}
+              </span>
+              <span className="text-base font-semibold sm:text-lg">+{overflowCount} more</span>
+            </button>
+          ) : null}
+          {hiddenStripTiles
+            .filter((tile) => !tile.muted)
+            .map((tile) => (
+              <HiddenAudio key={`audio-${tile.key}`} stream={tile.stream} />
+            ))}
+        </div>
+      ) : null}
     </div>
   );
 };

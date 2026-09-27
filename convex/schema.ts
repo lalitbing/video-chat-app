@@ -8,6 +8,9 @@ export default defineSchema({
     hostName: v.string(),
     hostSessionId: v.union(v.string(), v.null()),
     sharerId: v.union(v.string(), v.null()),
+    // Set when a room is handed out by createRandom but the host hasn't joined yet.
+    reservedBy: v.optional(v.string()),
+    reservedUntil: v.optional(v.number()),
   }).index("by_roomId", ["roomId"]),
 
   members: defineTable({

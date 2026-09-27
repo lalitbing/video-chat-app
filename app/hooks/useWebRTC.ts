@@ -61,6 +61,14 @@ export type MediaDeviceOption = {
   label: string;
 };
 
+// Every extra participant means another encode and decode per tab (mesh), so keep
+// camera capture modest: 360p at 24fps is plenty for tiles this size.
+const cameraConstraints: MediaTrackConstraints = {
+  width: { ideal: 640 },
+  height: { ideal: 360 },
+  frameRate: { ideal: 24, max: 24 },
+};
+
 const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
@@ -292,7 +300,7 @@ export const useWebRTC = (roomId: string | null, name: string, options: UseWebRT
     let active = true;
 
     navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
+      .getUserMedia({ video: cameraConstraints, audio: true })
       .then((mediaStream) => {
         if (!active) {
           mediaStream.getTracks().forEach((track) => track.stop());
@@ -795,7 +803,7 @@ export const useWebRTC = (roomId: string | null, name: string, options: UseWebRT
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: deviceId } },
+          video: { ...cameraConstraints, deviceId: { exact: deviceId } },
           audio: false,
         });
         const nextCameraTrack = stream.getVideoTracks()[0] ?? null;

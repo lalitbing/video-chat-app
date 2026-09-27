@@ -1,8 +1,12 @@
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
-const MIN_ROOM_ID = 1;
-const MAX_ROOM_ID = 999;
+export const MIN_ROOM_ID = 1;
+export const MAX_ROOM_ID = 999;
+// Room numbers run 1-999, but only this many meetings may run at the same time.
+export const MAX_ACTIVE_ROOMS = 5;
+// How long a room handed out by createRandom is held for its host to join.
+export const RESERVATION_MS = 5 * 60_000;
 
 // A session that hasn't sent a heartbeat for this long is treated as disconnected.
 export const PRESENCE_STALE_MS = 30_000;
@@ -47,12 +51,19 @@ export const getPending = (ctx: QueryCtx, roomId: string) =>
     .withIndex("by_room", (q) => q.eq("roomId", roomId))
     .collect();
 
+export const isReserved = (room: Doc<"rooms">, now = Date.now()) =>
+  Boolean(room.reservedBy && room.reservedUntil && room.reservedUntil > now);
+
 export const roomExists = async (ctx: QueryCtx, roomId: string) => {
   const room = await getRoom(ctx, roomId);
   if (!room) return false;
+  if (isReserved(room)) return true;
   const [members, pending] = await Promise.all([getMembers(ctx, roomId), getPending(ctx, roomId)]);
   return members.length > 0 || pending.length > 0;
 };
+
+// Every row in `rooms` is a live or reserved meeting; empty rooms are deleted.
+export const countActiveRooms = async (ctx: QueryCtx) => (await ctx.db.query("rooms").collect()).length;
 
 export const hasNameConflict = async (
   ctx: QueryCtx,
@@ -98,6 +109,7 @@ export const touchPresence = async (ctx: MutationCtx, sessionId: string) => {
 export const cleanupRoomIfEmpty = async (ctx: MutationCtx, roomId: string) => {
   const room = await getRoom(ctx, roomId);
   if (!room) return;
+  if (isReserved(room)) return; // still waiting for its host
   const [members, pending] = await Promise.all([getMembers(ctx, roomId), getPending(ctx, roomId)]);
   if (members.length === 0 && pending.length === 0) {
     await deleteRoom(ctx, room);

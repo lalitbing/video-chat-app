@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { AlertIcon, LinkIcon } from "@/app/icons";
 
 type ConfirmDialogProps = {
   isOpen: boolean;
@@ -8,7 +9,8 @@ type ConfirmDialogProps = {
   description: string;
   confirmLabel: string;
   cancelLabel?: string;
-  confirmButtonClassName?: string;
+  tone?: "danger" | "accent";
+  icon?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -19,7 +21,8 @@ export const ConfirmDialog = ({
   description,
   confirmLabel,
   cancelLabel = "Cancel",
-  confirmButtonClassName = "bg-red-500 text-white hover:bg-red-600",
+  tone = "danger",
+  icon,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) => {
@@ -101,38 +104,68 @@ export const ConfirmDialog = ({
 
   if (!isOpen) return null;
 
+  const isDanger = tone === "danger";
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex cursor-pointer items-center justify-center bg-black/65 px-4"
-      onClick={onCancel}
-    >
+    <DialogBackdrop onDismiss={onCancel}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-description"
         ref={dialogRef}
-        className="w-full max-w-sm cursor-default rounded-2xl border border-zinc-700 bg-zinc-900 p-5 text-zinc-100 shadow-2xl"
+        className={dialogPanelClass}
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="confirm-dialog-title" className="text-lg font-semibold text-white">
+        <span
+          className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
+            isDanger ? "bg-danger/15 text-[#ff8a8e]" : "bg-accent-soft text-[#8fb8ff]"
+          }`}
+        >
+          {icon ?? (isDanger ? <AlertIcon className="h-5 w-5" /> : <LinkIcon className="h-5 w-5" />)}
+        </span>
+        <h2 id="confirm-dialog-title" className="mt-4 text-lg font-bold tracking-tight text-ink">
           {title}
         </h2>
-        <p className="mt-2 text-sm text-zinc-300">{description}</p>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800"
-          >
+        <p id="confirm-dialog-description" className="mt-1.5 text-sm leading-relaxed text-muted">
+          {description}
+        </p>
+        <div className="mt-6 grid grid-cols-2 gap-2">
+          <button onClick={onCancel} className={dialogSecondaryButtonClass}>
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${confirmButtonClassName}`}
+            className={isDanger ? dialogDangerButtonClass : dialogPrimaryButtonClass}
           >
             {confirmLabel}
           </button>
         </div>
       </div>
-    </div>
+    </DialogBackdrop>
   );
 };
+
+// Shared dialog styling, also used by the host leave/end dialog.
+export const dialogPanelClass =
+  "w-full max-w-sm animate-pop-in cursor-default rounded-[26px] bg-panel p-6 text-ink shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] ring-1 ring-white/10";
+const dialogButtonBase =
+  "h-11 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60";
+export const dialogSecondaryButtonClass = `${dialogButtonBase} bg-white/[0.06] text-ink ring-1 ring-white/10 hover:bg-white/10`;
+export const dialogPrimaryButtonClass = `${dialogButtonBase} bg-accent text-white hover:bg-accent-strong`;
+export const dialogDangerButtonClass = `${dialogButtonBase} bg-danger text-white hover:bg-danger-strong`;
+
+export const DialogBackdrop = ({
+  children,
+  onDismiss,
+}: {
+  children: ReactNode;
+  onDismiss: () => void;
+}) => (
+  <div
+    className="fixed inset-0 z-50 flex animate-fade-in cursor-pointer items-center justify-center bg-[#03060c]/70 px-4 backdrop-blur-sm"
+    onClick={onDismiss}
+  >
+    {children}
+  </div>
+);

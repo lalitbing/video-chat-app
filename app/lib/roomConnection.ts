@@ -90,6 +90,11 @@ export class RoomConnection {
     return this;
   }
 
+  /** Live count of running meetings against the cap. Returns an unsubscribe function. */
+  watchCapacity(onChange: (capacity: { active: number; max: number }) => void) {
+    return this.client.onUpdate(api.rooms.capacity, {}, onChange);
+  }
+
   on(event: string, listener: Listener) {
     let set = this.listeners.get(event);
     if (!set) {
@@ -115,6 +120,12 @@ export class RoomConnection {
         this.client
           .query(api.rooms.exists, { roomId })
           .then(reply, () => reply({ exists: false, error: "Unable to reach the room server." }));
+        return;
+
+      case "create-random-room":
+        this.client
+          .mutation(api.rooms.createRandom, { name: String(payload.name ?? ""), sessionId })
+          .then(reply, () => reply({ ok: false, error: "Unable to reach the room server." }));
         return;
 
       case "join-room":

@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Avatar } from "@/app/components/ui/Avatar";
+import { SpeakingBars } from "@/app/components/ui/SpeakingBars";
+import { useSpeaking } from "@/app/hooks/useSpeaking";
 
 type VideoTileProps = {
   stream: MediaStream | null;
@@ -11,6 +14,13 @@ type VideoTileProps = {
   objectFit?: "cover" | "contain";
   showVideoOffPlaceholder?: boolean;
   placeholderLetter?: string;
+  /** Name used for the avatar colour; defaults to the label. */
+  avatarName?: string;
+  /** Fill the parent instead of keeping a 16:9 box (small tiles only). */
+  fill?: boolean;
+  detectSpeaking?: boolean;
+  hideLabel?: boolean;
+  className?: string;
 };
 
 export const VideoTile = ({
@@ -22,8 +32,14 @@ export const VideoTile = ({
   objectFit = "contain",
   showVideoOffPlaceholder,
   placeholderLetter,
+  avatarName,
+  fill = false,
+  detectSpeaking = true,
+  hideLabel = false,
+  className = "",
 }: VideoTileProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isSpeaking = useSpeaking(stream, detectSpeaking);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -33,38 +49,66 @@ export const VideoTile = ({
     }
   }, [stream]);
 
-  const containerClass =
-    size === "small"
-      ? "relative aspect-video w-full shrink-0 overflow-hidden rounded-xl bg-zinc-900"
-      : "relative h-full w-full min-h-0 overflow-hidden rounded-2xl bg-zinc-900";
+  const isLarge = size === "large";
+  const containerClass = isLarge
+    ? "h-full w-full min-h-0 rounded-[24px]"
+    : fill
+      ? "h-full w-full min-h-0 rounded-[20px]"
+      : "aspect-video w-full shrink-0 rounded-[18px]";
 
   const videoClass =
     objectFit === "contain" ? "h-full w-full object-contain" : "h-full w-full object-cover";
 
   const showPlaceholder = Boolean(showVideoOffPlaceholder && placeholderLetter);
+  const personName = avatarName ?? label;
 
   return (
-    <div className={containerClass}>
+    <div
+      className={`relative overflow-hidden bg-gradient-to-br from-[#1b2536] to-[#121925] ring-1 transition-[box-shadow] duration-200 ${
+        isSpeaking ? "ring-2 ring-accent shadow-[0_0_0_4px_rgba(47,123,246,0.18)]" : "ring-white/5"
+      } ${containerClass} ${className}`}
+    >
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={muted}
-        className={`${videoClass} ${mirrored ? "-scale-x-100" : ""} ${showPlaceholder ? "opacity-0 absolute" : ""}`}
+        className={`${videoClass} ${mirrored ? "-scale-x-100" : ""} ${showPlaceholder ? "absolute opacity-0" : ""}`}
       />
       {showPlaceholder && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
-          <span
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-700 text-xl font-semibold text-white sm:h-16 sm:w-16 sm:text-2xl"
-            aria-hidden
-          >
-            {placeholderLetter}
-          </span>
+        <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_50%_45%,rgba(47,123,246,0.18),transparent_60%)]">
+          <div className={isSpeaking ? "pulse-ring rounded-full" : "rounded-full"}>
+            <Avatar
+              name={personName}
+              size={isLarge ? "xl" : "lg"}
+              className={isLarge ? "ring-8 ring-white/5" : "ring-4 ring-white/5"}
+            />
+          </div>
         </div>
       )}
-      <div className="absolute left-3 top-3 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">
-        {label}
-      </div>
+      <div className="tile-scrim pointer-events-none absolute inset-0" />
+      {isLarge ? (
+        // Featured tile: name top-left (clear of the control dock), like the brand shots.
+        hideLabel ? null : (
+          <div className="pointer-events-none absolute left-4 top-4 flex max-w-[70%] items-center gap-2 rounded-full bg-black/35 py-1.5 pl-3.5 pr-3 text-sm font-semibold text-white backdrop-blur-md sm:left-5 sm:top-5">
+            <span className="truncate">{label}</span>
+            {isSpeaking ? <SpeakingBars className="h-3 text-[#8fb8ff]" /> : null}
+          </div>
+        )
+      ) : (
+        <>
+          {hideLabel ? null : (
+            <div className="pointer-events-none absolute bottom-2.5 left-3 max-w-[75%] truncate text-xs font-semibold text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.55)]">
+              {label}
+            </div>
+          )}
+          {isSpeaking ? (
+            <div className="pointer-events-none absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-white shadow-lg">
+              <SpeakingBars className="h-2.5" />
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 };

@@ -1,16 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
-import { BottomBar } from "@/app/components/BottomBar";
+import { CallControls } from "@/app/components/CallControls";
 import { ChatPanel } from "@/app/components/ChatPanel";
 import { ParticipantsPanel } from "@/app/components/ParticipantsPanel";
-import { TopBar } from "@/app/components/TopBar";
+import { RoomHeader } from "@/app/components/RoomHeader";
+import { SidePanel } from "@/app/components/SidePanel";
+import { Avatar } from "@/app/components/ui/Avatar";
+import { BrandMark } from "@/app/components/ui/BrandMark";
+import { Spinner } from "@/app/components/ui/Spinner";
+import { Toast } from "@/app/components/ui/Toast";
 import { VideoGrid } from "@/app/components/VideoGrid";
 import { VideoTile } from "@/app/components/VideoTile";
 import { useChat } from "@/app/hooks/useChat";
 import { useWebRTC } from "@/app/hooks/useWebRTC";
-import { MicIcon, MicOffIcon, VideoOffIcon, VideoOnIcon } from "@/app/icons";
+import {
+  AlertIcon,
+  ArrowLeftIcon,
+  MicIcon,
+  MicOffIcon,
+  VideoOffIcon,
+  VideoOnIcon,
+} from "@/app/icons";
 import { consumePendingLandingLaunch } from "@/app/lib/landingLaunch";
 import { getRoomConnection } from "@/app/lib/roomConnection";
 import { normalizeRoomId } from "@/app/lib/room";
@@ -360,7 +380,7 @@ export default function RoomPage() {
     if (launchIntent !== "join") return;
     if (roomLookupState !== "missing" && roomEntryState !== "room-not-found") return;
 
-    router.replace(`/?room=${normalizedRoomId}&promptCreate=1`);
+    router.replace(`/?room=${normalizedRoomId}&missing=1`);
   }, [
     isLaunchBootstrapComplete,
     launchIntent,
@@ -413,9 +433,6 @@ export default function RoomPage() {
     if (typeof document === "undefined") return;
     document.title = unreadMessageCount > 0 ? "VC meet *" : "VC meet";
   }, [roomEntryState, unreadMessageCount]);
-
-  const hasUnreadMessages = unreadMessageCount > 0;
-  const hasPendingParticipants = pendingParticipants.length > 0;
 
   const participantList = useMemo(() => {
     if (participants.length > 0) {
@@ -571,199 +588,241 @@ export default function RoomPage() {
   const isParticipantsOpen = activeSidebar === "participants";
   const isSidebarOpen = isChatOpen || isParticipantsOpen;
 
-  const toast = toastMessage ? (
-    <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-100 shadow-lg ring-1 ring-white/10">
-      {toastMessage}
-    </div>
-  ) : null;
+  const closeSidebar = () => {
+    isChatOpenRef.current = false;
+    setActiveSidebar(null);
+  };
+
+  const toast = <Toast message={toastMessage} />;
 
   if (!isLaunchBootstrapComplete) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
-        {toast}
-        <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="text-lg font-semibold tracking-tight">VC meet</div>
-        </header>
-
-        <main className="flex flex-1 items-center justify-center px-4 py-10">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <h1 className="text-xl font-semibold">Joining meeting</h1>
-            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
-              Preparing your profile...
-            </p>
-          </div>
-        </main>
-      </div>
+      <StatusScreen toast={toast} icon={<Spinner className="h-6 w-6" />} title="Joining meeting">
+        Preparing your profile...
+      </StatusScreen>
     );
   }
 
   if (shouldShowNotFoundScreen) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
-        {toast}
-        <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="text-lg font-semibold tracking-tight">VC meet</div>
-        </header>
-
-        <main className="flex flex-1 items-center justify-center px-4 py-10">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <h1 className="text-xl font-semibold">Meeting room not found</h1>
-            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
-              Redirecting to homepage in {redirectCountdown}s...
-            </p>
-          </div>
-        </main>
-      </div>
+      <StatusScreen
+        toast={toast}
+        tone="danger"
+        icon={<span className="font-mono text-lg font-bold">404</span>}
+        title="Meeting room not found"
+      >
+        Redirecting to homepage in <span className="font-mono text-ink">{redirectCountdown}s</span>...
+      </StatusScreen>
     );
   }
 
   if (roomEntryState !== "joined") {
-    return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
-        {toast}
-        <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="text-lg font-semibold tracking-tight">VC meet</div>
-        </header>
+    const prejoinHeading =
+      roomLookupState === "checking"
+        ? "Checking the room..."
+        : isWaitingForApproval
+          ? "Knock, knock."
+          : isJoinInProgress
+            ? "Joining..."
+            : "Ready to join?";
 
-        <main className="flex flex-1 items-center justify-center px-4 py-10">
-          <form
-            className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!canSubmitPrejoinForm) {
-                return;
-              }
-              handleJoin();
-            }}
-            onKeyDown={handlePrejoinShortcutSubmit}
-          >
-            <h1 className="mb-1 text-2xl font-semibold">Room {normalizedRoomId}</h1>
-            <p className="mb-5 text-sm text-zinc-500 dark:text-zinc-400">{prejoinDescription}</p>
-            {isWaitingForApproval ? (
-              <div
-                role="status"
-                aria-live="polite"
-                className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-700/80 dark:bg-amber-900/20 dark:text-amber-100"
-              >
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500" aria-hidden />
-                  Waiting for host approval
+    return (
+      <div className="app-backdrop flex min-h-dvh p-3 sm:p-5">
+        {toast}
+        <div className="app-shell mx-auto flex w-full max-w-[1320px] flex-col overflow-hidden rounded-[28px] ring-1 ring-white/5">
+          <header className="flex items-center gap-3 px-4 py-4 sm:px-6">
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              title="Back to home"
+              aria-label="Back to home"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-ink ring-1 ring-white/10 transition hover:bg-white/10"
+            >
+              <ArrowLeftIcon className="h-[18px] w-[18px]" />
+            </button>
+            <h1 className="text-lg font-bold tracking-tight sm:text-xl">
+              Room <span className="font-mono">{normalizedRoomId}</span>
+            </h1>
+            <div className="ml-auto hidden sm:block">
+              <BrandMark />
+            </div>
+          </header>
+
+          <main className="grid flex-1 grid-cols-[minmax(0,1fr)] gap-4 px-3 pb-3 sm:px-5 sm:pb-5 lg:min-h-0 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,1fr)]">
+            <div className="relative aspect-[4/3] min-h-0 sm:aspect-video lg:aspect-auto">
+              {previewStream ? (
+                <VideoTile
+                  stream={previewStream}
+                  label="You (preview)"
+                  avatarName={previewName}
+                  muted
+                  mirrored
+                  objectFit="cover"
+                  detectSpeaking={!isMuted}
+                  showVideoOffPlaceholder={!isVideoEnabled}
+                  placeholderLetter={previewInitial}
+                />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 rounded-[24px] bg-gradient-to-br from-[#1b2536] to-[#121925] px-6 text-center ring-1 ring-white/5">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] text-muted">
+                    <VideoOffIcon className="h-6 w-6" />
+                  </span>
+                  <p className="max-w-xs text-sm text-muted">
+                    Camera preview will appear once media access is allowed.
+                  </p>
                 </div>
-                <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-                  {waitingStatusMessage}
+              )}
+
+              <div className="absolute inset-x-0 bottom-4 flex justify-center gap-2 sm:bottom-5">
+                <div className="glass flex items-center gap-2 rounded-full p-1.5 ring-1 ring-white/10">
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    title={isMuted ? "Unmute" : "Mute"}
+                    aria-pressed={isMuted}
+                    className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold transition ${
+                      isMuted ? "bg-white text-[#0d1420]" : "bg-white/10 text-white hover:bg-white/20"
+                    }`}
+                  >
+                    {isMuted ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
+                    {isMuted ? "Mic off" : "Mic on"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleVideo}
+                    title={isVideoEnabled ? "Turn off video" : "Turn on video"}
+                    aria-pressed={!isVideoEnabled}
+                    className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold transition ${
+                      !isVideoEnabled ? "bg-white text-[#0d1420]" : "bg-white/10 text-white hover:bg-white/20"
+                    }`}
+                  >
+                    {isVideoEnabled ? (
+                      <VideoOnIcon className="h-4 w-4" />
+                    ) : (
+                      <VideoOffIcon className="h-4 w-4" />
+                    )}
+                    {isVideoEnabled ? "Video on" : "Video off"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <form
+              className="flex flex-col rounded-[24px] bg-panel p-6 ring-1 ring-white/5 sm:p-8 lg:justify-center"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!canSubmitPrejoinForm) {
+                  return;
+                }
+                handleJoin();
+              }}
+              onKeyDown={handlePrejoinShortcutSubmit}
+            >
+              <div className="text-xs font-bold uppercase tracking-wider text-accent">
+                {roomRole === "host" || launchIntent === "create" ? "You're the host" : "Before you join"}
+              </div>
+              <h2 className="mt-2 text-3xl font-bold tracking-[-0.03em] text-ink">{prejoinHeading}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{prejoinDescription}</p>
+
+              {isWaitingForApproval ? (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mt-6 flex items-center gap-4 rounded-2xl bg-accent-soft p-4 ring-1 ring-accent/30"
+                >
+                  <span className="pulse-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white">
+                    <span className="h-2.5 w-2.5 rounded-full bg-white" aria-hidden />
+                  </span>
+                  <div>
+                    <div className="text-sm font-bold text-ink">Waiting for host approval</div>
+                    <p className="mt-0.5 text-sm text-[#b7cdf3]">{waitingStatusMessage}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {shouldShowNameInput ? (
+                <div className="mt-6 flex flex-col gap-2">
+                  <label htmlFor="prejoin-display-name" className="text-sm font-semibold text-ink">
+                    Your name
+                  </label>
+                  <input
+                    id="prejoin-display-name"
+                    name="displayName"
+                    type="text"
+                    value={displayName}
+                    onChange={(event) => {
+                      setDisplayName(event.target.value);
+                      setNameError("");
+                    }}
+                    autoComplete="name"
+                    autoCorrect="off"
+                    placeholder="Enter your name"
+                    className="h-12 rounded-2xl bg-raised px-4 text-[15px] text-ink outline-none ring-1 ring-white/5 transition placeholder:text-faint focus:ring-2 focus:ring-accent"
+                  />
+                </div>
+              ) : !isWaitingForApproval ? (
+                <div className="mt-6 flex items-center gap-3 rounded-2xl bg-raised p-3 ring-1 ring-white/5">
+                  <Avatar name={previewName} size="md" />
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-medium text-muted">Joining as</div>
+                    <div className="truncate text-sm font-semibold text-ink">{previewName}</div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex flex-col gap-1.5">
+                {nameError ? <InlineError message={nameError} /> : null}
+                {roomLookupState === "error" ? <InlineError message={roomLookupError} /> : null}
+                {roomEntryError ? <InlineError message={roomEntryError} /> : null}
+              </div>
+
+              <div className="pt-6">
+                {canShowJoinAction ? (
+                  <button
+                    type="submit"
+                    disabled={isJoinDisabled}
+                    aria-keyshortcuts="Control+Enter Meta+Enter"
+                    className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-accent px-5 text-[15px] font-semibold text-white shadow-[0_12px_30px_-10px_rgba(47,123,246,0.8)] transition hover:bg-accent-strong disabled:bg-accent/40 disabled:text-white/60 disabled:shadow-none"
+                  >
+                    {isJoinInProgress || roomLookupState === "checking" ? <Spinner className="h-4 w-4" /> : null}
+                    {joinButtonLabel}
+                  </button>
+                ) : null}
+                <p className="mt-3 text-center text-xs text-faint">
+                  Press Ctrl+Enter (Cmd+Enter on Mac) to submit join.
                 </p>
               </div>
-            ) : null}
-
-            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-950 dark:border-zinc-700">
-              <div className="aspect-video w-full">
-                {previewStream ? (
-                  <VideoTile
-                    stream={previewStream}
-                    label="You (preview)"
-                    muted
-                    mirrored
-                    objectFit="cover"
-                    showVideoOffPlaceholder={!isVideoEnabled}
-                    placeholderLetter={previewInitial}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-zinc-300">
-                    Camera preview will appear once media access is allowed.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={toggleMute}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
-                  isMuted
-                    ? "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900"
-                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
-                }`}
-              >
-                {isMuted ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
-                {isMuted ? "Mic off" : "Mic on"}
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleVideo}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
-                  !isVideoEnabled
-                    ? "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900"
-                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
-                }`}
-              >
-                {isVideoEnabled ? (
-                  <VideoOnIcon className="h-4 w-4" />
-                ) : (
-                  <VideoOffIcon className="h-4 w-4" />
-                )}
-                {isVideoEnabled ? "Video on" : "Video off"}
-              </button>
-            </div>
-
-            {shouldShowNameInput ? (
-              <div className="mt-5 flex flex-col gap-2">
-                <label htmlFor="prejoin-display-name" className="text-sm font-medium">
-                  Your name
-                </label>
-                <input
-                  id="prejoin-display-name"
-                  name="displayName"
-                  type="text"
-                  value={displayName}
-                  onChange={(event) => {
-                    setDisplayName(event.target.value);
-                    setNameError("");
-                  }}
-                  autoComplete="name"
-                  autoCorrect="off"
-                  placeholder="Enter your name"
-                  className="rounded-xl border border-zinc-200 bg-transparent px-4 py-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700"
-                />
-              </div>
-            ) : null}
-
-            <div className="mt-4 flex flex-col gap-2">
-              {nameError ? <span className="text-xs text-red-500">{nameError}</span> : null}
-              {roomLookupState === "error" ? (
-                <span className="text-xs text-red-500">{roomLookupError}</span>
-              ) : null}
-              {roomEntryError ? <span className="text-xs text-red-500">{roomEntryError}</span> : null}
-            </div>
-
-            {canShowJoinAction ? (
-              <button
-                type="submit"
-                disabled={isJoinDisabled}
-                aria-keyshortcuts="Control+Enter Meta+Enter"
-                className="mt-5 w-full rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                {joinButtonLabel}
-              </button>
-            ) : null}
-            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Press Ctrl+Enter (Cmd+Enter on Mac) to submit join.
-            </p>
-          </form>
-        </main>
+            </form>
+          </main>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
-      {toast}
-      <TopBar userName={joinName || displayName || "Guest"} />
+  const localName = joinName || displayName || "Guest";
+  const selfId = getRoomConnection().id;
 
-      <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className={`flex min-h-0 flex-1 transition-all ${isSidebarOpen ? "mr-80" : ""}`}>
-          <div className="flex min-h-0 flex-1">
+  return (
+    <div className="app-backdrop flex h-dvh md:p-4">
+      {toast}
+      <div className="app-shell flex min-w-0 flex-1 flex-col overflow-hidden ring-1 ring-white/5 md:rounded-[28px]">
+        <RoomHeader
+          roomId={normalizedRoomId}
+          hostName={hostName}
+          participantCount={participantList.length}
+          userName={localName}
+          isHost={roomRole === "host"}
+          isRecording={isRecording}
+          isChatOpen={isChatOpen}
+          unreadMessageCount={unreadMessageCount}
+          isParticipantsOpen={isParticipantsOpen}
+          pendingParticipantCount={pendingParticipants.length}
+          onToggleChat={openChat}
+          onToggleParticipants={openParticipants}
+        />
+
+        <main className="relative flex min-h-0 flex-1 gap-3 px-2 pb-2 sm:gap-4 sm:px-4 sm:pb-4">
+          <div className="min-h-0 min-w-0 flex-1">
             <VideoGrid
               localStream={localStream}
               localCameraStream={localCameraStream}
@@ -775,63 +834,112 @@ export default function RoomPage() {
               currentSharerId={currentSharerId}
               isLocalSharer={isLocalSharer}
               isVideoEnabled={isVideoEnabled}
-              localDisplayName={joinName || displayName}
+              localDisplayName={localName}
+              onShowAllParticipants={() => {
+                if (!isParticipantsOpen) openParticipants();
+              }}
+              controls={
+                <CallControls
+                  isMuted={isMuted}
+                  onToggleMute={toggleMute}
+                  audioInputDevices={audioInputDevices}
+                  selectedAudioInputId={selectedAudioInputId}
+                  onSelectAudioInput={switchAudioInput}
+                  isVideoEnabled={isVideoEnabled}
+                  onToggleVideo={toggleVideo}
+                  videoInputDevices={videoInputDevices}
+                  selectedVideoInputId={selectedVideoInputId}
+                  onSelectVideoInput={switchVideoInput}
+                  isScreenSharing={isScreenSharing}
+                  onToggleScreenShare={toggleScreenShare}
+                  isRecording={isRecording}
+                  onStartRecording={startRecording}
+                  onStopRecording={stopRecording}
+                  isHost={roomRole === "host"}
+                  isEndingMeeting={isEndingMeeting}
+                  onLeaveMeeting={handleLeaveRoom}
+                  onEndMeeting={handleEndMeeting}
+                />
+              }
             />
           </div>
+
+          {isSidebarOpen ? (
+            <SidePanel
+              activeTab={isChatOpen ? "chat" : "participants"}
+              unreadMessageCount={unreadMessageCount}
+              participantCount={participantList.length}
+              pendingParticipantCount={pendingParticipants.length}
+              onSelectTab={(tab) => {
+                if (tab === "chat" && !isChatOpen) openChat();
+                if (tab === "participants" && !isParticipantsOpen) openParticipants();
+              }}
+              onClose={closeSidebar}
+            >
+              {isChatOpen ? (
+                <ChatPanel
+                  messages={messages}
+                  selfId={selfId}
+                  onSend={(message) => sendMessage(message, localName)}
+                />
+              ) : (
+                <ParticipantsPanel
+                  participants={participantList}
+                  pendingParticipants={pendingParticipants}
+                  localDisplayName={localName}
+                  localRole={roomRole}
+                  isHost={roomRole === "host"}
+                  admittingParticipantId={admittingParticipantId}
+                  onAdmitParticipant={admitParticipant}
+                />
+              )}
+            </SidePanel>
+          ) : null}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function InlineError({ message }: { message: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs font-medium text-[#ff8a8e]">
+      <AlertIcon className="h-3.5 w-3.5 shrink-0" />
+      {message}
+    </span>
+  );
+}
+
+function StatusScreen({
+  toast,
+  icon,
+  title,
+  tone = "accent",
+  children,
+}: {
+  toast: ReactNode;
+  icon: ReactNode;
+  title: string;
+  tone?: "accent" | "danger";
+  children: ReactNode;
+}) {
+  return (
+    <div className="app-backdrop flex min-h-dvh items-center justify-center p-4">
+      {toast}
+      <div className="app-shell w-full max-w-sm animate-pop-in rounded-[28px] p-8 text-center ring-1 ring-white/5">
+        <div className="mb-6 flex justify-center">
+          <BrandMark />
         </div>
-
-        {isChatOpen ? (
-          <div className="absolute bottom-0 right-0 top-0 w-80 border-l border-zinc-800 bg-zinc-900">
-            <ChatPanel
-              messages={messages}
-              onSend={(message) => sendMessage(message, joinName || displayName)}
-            />
-          </div>
-        ) : null}
-
-        {isParticipantsOpen ? (
-          <div className="absolute bottom-0 right-0 top-0 w-80 border-l border-zinc-800 bg-zinc-900">
-            <ParticipantsPanel
-              participants={participantList}
-              pendingParticipants={pendingParticipants}
-              localDisplayName={joinName || displayName}
-              localRole={roomRole}
-              isHost={roomRole === "host"}
-              admittingParticipantId={admittingParticipantId}
-              onAdmitParticipant={admitParticipant}
-            />
-          </div>
-        ) : null}
-      </main>
-
-      <BottomBar
-        roomId={normalizedRoomId}
-        isMuted={isMuted}
-        onToggleMute={toggleMute}
-        audioInputDevices={audioInputDevices}
-        selectedAudioInputId={selectedAudioInputId}
-        onSelectAudioInput={switchAudioInput}
-        isVideoEnabled={isVideoEnabled}
-        onToggleVideo={toggleVideo}
-        videoInputDevices={videoInputDevices}
-        selectedVideoInputId={selectedVideoInputId}
-        onSelectVideoInput={switchVideoInput}
-        isScreenSharing={isScreenSharing}
-        onToggleScreenShare={toggleScreenShare}
-        isRecording={isRecording}
-        onStartRecording={startRecording}
-        onStopRecording={stopRecording}
-        isChatOpen={isChatOpen}
-        hasUnreadMessages={hasUnreadMessages}
-        isParticipantsOpen={isParticipantsOpen}
-        hasPendingParticipants={hasPendingParticipants}
-        onToggleParticipants={openParticipants}
-        onToggleChat={openChat}
-        isHost={roomRole === "host"}
-        isEndingMeeting={isEndingMeeting}
-        onLeaveMeeting={handleLeaveRoom}
-        onEndMeeting={handleEndMeeting}
-      />
+        <span
+          className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${
+            tone === "danger" ? "bg-danger/15 text-[#ff8a8e]" : "bg-accent-soft text-[#8fb8ff]"
+          }`}
+        >
+          {icon}
+        </span>
+        <h1 className="mt-5 text-xl font-bold tracking-tight text-ink">{title}</h1>
+        <p className="mt-2 text-sm text-muted">{children}</p>
+      </div>
     </div>
   );
 }

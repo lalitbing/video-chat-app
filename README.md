@@ -26,7 +26,8 @@ A real-time video meeting app built with WebRTC and [Convex](https://convex.dev)
 | **Screen sharing** | One active sharer per room; the shared screen becomes the main tile. |
 | **Screen recording** | Local recording of the shared screen (or a new capture), downloaded as WebM. |
 | **In-call chat** | Room-scoped chat; you see messages sent after you joined. |
-| **Room IDs** | Numeric room IDs from 1 to 999, shareable as `/room/<id>`. |
+| **Automatic rooms** | "Start a meeting" hands the host a free room number (1 to 999); guests join with that number or the `/room/<id>` link. |
+| **Meeting cap** | At most 5 meetings run at once (`MAX_ACTIVE_ROOMS` in `convex/model.ts`). The landing page shows live availability. |
 
 ---
 
@@ -61,6 +62,7 @@ A real-time video meeting app built with WebRTC and [Convex](https://convex.dev)
 | Client emits | Convex function |
 |--------------|-----------------|
 | `room-exists` | `rooms.exists` (query) |
+| `create-random-room` | `rooms.createRandom`: picks and reserves a free room in one transaction |
 | `join-room` | `rooms.join` |
 | `admit-participant` | `rooms.admit` |
 | `end-meeting` | `rooms.end` |

@@ -3,8 +3,14 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query } from "./_generated/server";
 import {
+  MAX_ACTIVE_ROOMS,
+  MAX_ROOM_ID,
+  MIN_ROOM_ID,
   PRESENCE_STALE_MS,
+  RESERVATION_MS,
   SWEEP_INTERVAL_MS,
+  cleanupRoomIfEmpty,
+  countActiveRooms,
   clearSessionRoomState,
   clearSignalingInbox,
   deleteRoom,
@@ -21,6 +27,61 @@ import {
   sendEvent,
   touchPresence,
 } from "./model";
+
+const ROOMS_FULL_ERROR = `All ${MAX_ACTIVE_ROOMS} meeting rooms are in use right now. Please try again in a few minutes.`;
+
+export const capacity = query({
+  args: {},
+  handler: async (ctx) => ({ active: await countActiveRooms(ctx), max: MAX_ACTIVE_ROOMS }),
+});
+
+// Hands out a free room number and holds it for the caller, in one transaction,
+// so two people starting meetings at once can never get the same room.
+export const createRandom = mutation({
+  args: { name: v.string(), sessionId: v.string() },
+  handler: async (ctx, args) => {
+    const name = normalizeName(args.name);
+    if (!name) {
+      return { ok: false as const, error: "Please enter your name to start a meeting." };
+    }
+
+    const rooms = await ctx.db.query("rooms").collect();
+    if (rooms.length >= MAX_ACTIVE_ROOMS) {
+      return { ok: false as const, error: ROOMS_FULL_ERROR };
+    }
+
+    const used = new Set(rooms.map((room) => room.roomId));
+    const free: string[] = [];
+    for (let id = MIN_ROOM_ID; id <= MAX_ROOM_ID; id += 1) {
+      if (!used.has(String(id))) free.push(String(id));
+    }
+    const roomId = free[Math.floor(Math.random() * free.length)];
+
+    const roomDocId = await ctx.db.insert("rooms", {
+      roomId,
+      hostName: name,
+      hostSessionId: null,
+      sharerId: null,
+      reservedBy: args.sessionId,
+      reservedUntil: Date.now() + RESERVATION_MS,
+    });
+    await ctx.scheduler.runAfter(RESERVATION_MS, internal.rooms.expireReservation, { roomDocId });
+    await ctx.scheduler.runAfter(SWEEP_INTERVAL_MS, internal.rooms.sweep, { roomDocId });
+
+    return { ok: true as const, roomId };
+  },
+});
+
+// Frees a reserved room whose host never joined.
+export const expireReservation = internalMutation({
+  args: { roomDocId: v.id("rooms") },
+  handler: async (ctx, { roomDocId }) => {
+    const room = await ctx.db.get(roomDocId);
+    if (!room || !room.reservedBy) return;
+    await ctx.db.patch(roomDocId, { reservedBy: undefined, reservedUntil: undefined });
+    await cleanupRoomIfEmpty(ctx, room.roomId);
+  },
+});
 
 export const exists = query({
   args: { roomId: v.string() },
@@ -117,6 +178,9 @@ export const join = mutation({
       if (intent !== "create") {
         return { status: "room-not-found", error: `Meeting room ${roomId} was not found.` };
       }
+      if ((await countActiveRooms(ctx)) >= MAX_ACTIVE_ROOMS) {
+        return { status: "rooms-full", error: ROOMS_FULL_ERROR };
+      }
       const roomDocId = await ctx.db.insert("rooms", {
         roomId,
         hostName: name,
@@ -181,7 +245,12 @@ export const join = mutation({
         isSharing: false,
       });
     }
-    await ctx.db.patch(room._id, { hostSessionId: sessionId });
+    // The host has arrived, so the room no longer needs holding.
+    await ctx.db.patch(room._id, {
+      hostSessionId: sessionId,
+      reservedBy: undefined,
+      reservedUntil: undefined,
+    });
 
     return { status: "joined", role: "host", hostName: room.hostName };
   },
