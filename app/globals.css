@@ -135,12 +135,10 @@ button:disabled {
   cursor: pointer;
 }
 
-/* Deep navy canvas with the blue glow from the brand shots. */
+/* Deep navy canvas with one soft blue light, matching the landing page. */
 .app-backdrop {
   background:
-    radial-gradient(900px 520px at 0% 0%, rgb(38 104 245 / 0.42), transparent 62%),
-    radial-gradient(800px 480px at 100% 100%, rgb(38 104 245 / 0.3), transparent 60%),
-    radial-gradient(600px 400px at 100% 0%, rgb(20 40 110 / 0.5), transparent 70%),
+    radial-gradient(900px 520px at 85% -10%, rgb(38 104 245 / 0.22), transparent 65%),
     var(--color-canvas);
 }
 

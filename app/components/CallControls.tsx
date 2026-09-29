@@ -403,7 +403,7 @@ export const CallControls = ({
           onClick={handleEndCall}
           title="End call"
           aria-label="End call"
-          className="flex h-11 w-14 items-center justify-center rounded-full bg-danger text-white shadow-[0_10px_24px_-8px_rgba(229,72,77,0.9)] transition hover:bg-danger-strong sm:h-12 sm:w-16"
+          className="flex h-11 w-14 items-center justify-center rounded-full bg-danger text-white transition hover:bg-danger-strong active:scale-[0.97] sm:h-12 sm:w-16"
         >
           <EndCallIcon />
         </button>

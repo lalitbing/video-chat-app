@@ -579,7 +579,7 @@ export default function RoomPage() {
           ? `Joining room ${normalizedRoomId} as ${joinName || displayName || "Guest"}...`
           : shouldShowNameInput
             ? "Preview your camera and choose your mic/video settings before joining."
-            : `Ready to join room ${normalizedRoomId} as ${displayName}.`;
+            : "Check your camera and mic, then hop in.";
   const waitingStatusMessage = hostName
     ? `${hostName} will admit you into the meeting shortly.`
     : "The host will admit you into the meeting shortly.";
@@ -621,7 +621,7 @@ export default function RoomPage() {
       roomLookupState === "checking"
         ? "Checking the room..."
         : isWaitingForApproval
-          ? "Knock, knock."
+          ? "Waiting to be let in"
           : isJoinInProgress
             ? "Joining..."
             : "Ready to join?";
@@ -718,10 +718,7 @@ export default function RoomPage() {
               }}
               onKeyDown={handlePrejoinShortcutSubmit}
             >
-              <div className="text-xs font-bold uppercase tracking-wider text-accent">
-                {roomRole === "host" || launchIntent === "create" ? "You're the host" : "Before you join"}
-              </div>
-              <h2 className="mt-2 text-3xl font-bold tracking-[-0.03em] text-ink">{prejoinHeading}</h2>
+              <h2 className="text-3xl font-bold tracking-[-0.03em] text-ink">{prejoinHeading}</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted">{prejoinDescription}</p>
 
               {isWaitingForApproval ? (
@@ -764,7 +761,9 @@ export default function RoomPage() {
                 <div className="mt-6 flex items-center gap-3 rounded-2xl bg-raised p-3 ring-1 ring-white/5">
                   <Avatar name={previewName} size="md" />
                   <div className="min-w-0">
-                    <div className="text-[11px] font-medium text-muted">Joining as</div>
+                    <div className="text-[11px] font-medium text-muted">
+                      {roomRole === "host" || launchIntent === "create" ? "Hosting as" : "Joining as"}
+                    </div>
                     <div className="truncate text-sm font-semibold text-ink">{previewName}</div>
                   </div>
                 </div>
@@ -782,14 +781,15 @@ export default function RoomPage() {
                     type="submit"
                     disabled={isJoinDisabled}
                     aria-keyshortcuts="Control+Enter Meta+Enter"
-                    className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-accent px-5 text-[15px] font-semibold text-white shadow-[0_12px_30px_-10px_rgba(47,123,246,0.8)] transition hover:bg-accent-strong disabled:bg-accent/40 disabled:text-white/60 disabled:shadow-none"
+                    className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-accent px-5 text-[15px] font-semibold text-white transition hover:bg-accent-strong active:scale-[0.98] disabled:bg-accent/40 disabled:text-white/60"
                   >
                     {isJoinInProgress || roomLookupState === "checking" ? <Spinner className="h-4 w-4" /> : null}
                     {joinButtonLabel}
                   </button>
                 ) : null}
-                <p className="mt-3 text-center text-xs text-faint">
-                  Press Ctrl+Enter (Cmd+Enter on Mac) to submit join.
+                <p className="mt-3 text-center text-xs text-muted">
+                  or press <kbd className="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[11px] text-ink/80 ring-1 ring-white/10">⌘/Ctrl</kbd>{" "}
+                  <kbd className="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[11px] text-ink/80 ring-1 ring-white/10">Enter</kbd>
                 </p>
               </div>
             </form>
@@ -824,6 +824,7 @@ export default function RoomPage() {
         <main className="relative flex min-h-0 flex-1 gap-3 px-2 pb-2 sm:gap-4 sm:px-4 sm:pb-4">
           <div className="min-h-0 min-w-0 flex-1">
             <VideoGrid
+              roomId={normalizedRoomId}
               localStream={localStream}
               localCameraStream={localCameraStream}
               remoteStreams={remoteStreams}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/app/components/ui/Avatar";
 import { BrandMark } from "@/app/components/ui/BrandMark";
 import { ChatIcon, CheckIcon, CopyIcon, LinkIcon, ParticipantsIcon } from "@/app/icons";
+import { copyText, getRoomShareLink } from "@/app/lib/clipboard";
 import { getFocusableElements, trapTabWithinContainer } from "@/app/lib/focus";
 
 type RoomHeaderProps = {
@@ -46,7 +47,7 @@ const useElapsedSeconds = () => {
 const toggleButtonClass = (isActive: boolean) =>
   `relative flex h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold transition sm:px-4 ${
     isActive
-      ? "bg-accent text-white shadow-[0_10px_24px_-10px_rgba(47,123,246,0.9)]"
+      ? "bg-accent text-white"
       : "bg-white/[0.06] text-ink ring-1 ring-white/10 hover:bg-white/10"
   }`;
 
@@ -128,35 +129,9 @@ export const RoomHeader = ({
     };
   }, [isRoomLinkCopied]);
 
-  const getRoomShareLink = () => {
-    if (typeof window === "undefined") return `/room/${roomId}`;
-    return `${window.location.origin}/room/${roomId}`;
-  };
-
   const handleCopyRoomLink = async () => {
-    const link = getRoomShareLink();
-
-    try {
-      await navigator.clipboard.writeText(link);
+    if (await copyText(getRoomShareLink(roomId))) {
       setIsRoomLinkCopied(true);
-      return;
-    } catch {
-      // Fallback for browsers that block clipboard API.
-    }
-
-    try {
-      const textArea = document.createElement("textarea");
-      textArea.value = link;
-      textArea.setAttribute("readonly", "");
-      textArea.style.position = "absolute";
-      textArea.style.left = "-9999px";
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textArea);
-      setIsRoomLinkCopied(true);
-    } catch {
-      // Ignore copy failures.
     }
   };
 
@@ -173,8 +148,7 @@ export const RoomHeader = ({
           <h1 className="truncate text-lg font-bold tracking-tight text-ink sm:text-xl">
             Room <span className="font-mono">{roomId}</span>
           </h1>
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-400/10 px-2 py-0.5 font-mono text-[11px] font-medium text-emerald-300 ring-1 ring-emerald-400/20">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          <span className="shrink-0 font-mono text-[13px] tabular-nums text-muted" aria-label="Call duration">
             {formatElapsed(elapsedSeconds)}
           </span>
           {isRecording ? (
@@ -217,13 +191,13 @@ export const RoomHeader = ({
             </p>
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-raised p-1.5 pl-3 ring-1 ring-white/5">
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink/80">
-                {getRoomShareLink()}
+                {getRoomShareLink(roomId)}
               </span>
               <button
                 onClick={handleCopyRoomLink}
                 className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition ${
                   isRoomLinkCopied
-                    ? "bg-emerald-500/15 text-emerald-300"
+                    ? "bg-accent-soft text-[#8fb8ff]"
                     : "bg-accent text-white hover:bg-accent-strong"
                 }`}
               >

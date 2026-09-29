@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { VideoTile } from "@/app/components/VideoTile";
 import { Avatar } from "@/app/components/ui/Avatar";
-import { ScreenShareIcon } from "@/app/icons";
+import { CheckIcon, CopyIcon, ScreenShareIcon } from "@/app/icons";
+import { copyText, getRoomShareLink } from "@/app/lib/clipboard";
 
 type VideoGridProps = {
+  roomId: string;
   localStream: MediaStream | null;
   localCameraStream: MediaStream | null;
   remoteStreams: Record<string, MediaStream>;
@@ -52,7 +54,42 @@ const HiddenAudio = ({ stream }: { stream: MediaStream | null }) => {
   return <audio ref={audioRef} autoPlay className="hidden" />;
 };
 
+// Shown while you're alone, so the next step (inviting someone) is one click away.
+const InviteNudge = ({ roomId }: { roomId: string }) => {
+  const [isCopied, setIsCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isCopied) return;
+    const timeout = window.setTimeout(() => setIsCopied(false), 1600);
+    return () => window.clearTimeout(timeout);
+  }, [isCopied]);
+
+  return (
+    <div className="absolute inset-x-3 top-14 z-10 flex justify-center sm:top-5">
+      <div className="glass flex w-full max-w-sm animate-pop-in items-center gap-3 rounded-2xl p-2 pl-4 ring-1 ring-white/10">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-ink">Only you so far</div>
+          <div className="truncate text-xs text-muted">
+            Share room <span className="font-mono text-ink/80">{roomId}</span> to bring people in.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={async () => setIsCopied(await copyText(getRoomShareLink(roomId)))}
+          className={`flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition active:scale-[0.97] ${
+            isCopied ? "bg-accent-soft text-[#8fb8ff]" : "bg-accent text-white hover:bg-accent-strong"
+          }`}
+        >
+          {isCopied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
+          <span aria-live="polite">{isCopied ? "Copied" : "Copy link"}</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const VideoGrid = ({
+  roomId,
   localStream,
   localCameraStream,
   remoteStreams,
@@ -205,12 +242,7 @@ export const VideoGrid = ({
           placeholderLetter={initialOf(featured.avatarName)}
         />
 
-        {isAlone ? (
-          <div className="glass pointer-events-none absolute left-1/2 top-16 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium text-ink ring-1 ring-white/10 sm:top-5">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-warn" />
-            Waiting for others to join...
-          </div>
-        ) : null}
+        {isAlone ? <InviteNudge roomId={roomId} /> : null}
 
         {showPictureInPicture ? (
           <div className="absolute right-3 top-3 z-10 w-36 overflow-hidden rounded-[18px] shadow-[0_18px_40px_-10px_rgba(0,0,0,0.75)] ring-1 ring-white/15 sm:right-4 sm:top-4 sm:w-56">
